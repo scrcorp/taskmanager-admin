@@ -2,14 +2,14 @@
  * 역할 기반 권한 유틸리티 — 역할별 권한 설계 문서 기반.
  *
  * Role-based permission utilities derived from the permission design spec.
- * Role levels: Owner(1) > GM(2) > Supervisor(3) > Staff(4)
+ * Role levels: Owner(10) > GM(20) > Supervisor(30) > Staff(40)
  */
 
 export const ROLE_LEVEL = {
-  OWNER: 1,
-  GM: 2,
-  SUPERVISOR: 3,
-  STAFF: 4,
+  OWNER: 10,
+  GM: 20,
+  SUPERVISOR: 30,
+  STAFF: 40,
 } as const;
 
 /** Owner만 가능 (level 1). Owner only. */
