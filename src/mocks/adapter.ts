@@ -91,11 +91,11 @@ export async function handleMockRequest(
     );
   }
 
-  if (url.endsWith("/admin/auth/me")) {
+  if (url.endsWith("/auth/me")) {
     return mockResponse(mockMe, config);
   }
 
-  if (url.endsWith("/admin/auth/refresh") && method === "post") {
+  if (url.endsWith("/auth/refresh") && method === "post") {
     return mockResponse(
       { access_token: "mock-access-token-refreshed", refresh_token: "mock-refresh-token-refreshed", token_type: "bearer" },
       config,

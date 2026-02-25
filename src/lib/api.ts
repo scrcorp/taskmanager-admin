@@ -95,7 +95,7 @@ api.interceptors.response.use(
 
       try {
         const res = await axios.post(
-          `${process.env.NEXT_PUBLIC_API_URL}/admin/auth/refresh`,
+          `${process.env.NEXT_PUBLIC_API_URL}/auth/refresh`,
           { refresh_token: refreshToken }
         );
         const newToken = res.data.access_token;

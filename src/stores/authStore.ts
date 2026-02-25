@@ -25,7 +25,7 @@ export const useAuthStore = create<AuthState>((set) => ({
         ...(companyCode ? { company_code: companyCode } : {}),
       });
       setTokens(res.data.access_token, res.data.refresh_token);
-      const me = await api.get("/admin/auth/me");
+      const me = await api.get("/auth/me");
       set({ user: me.data, isLoading: false });
     } catch (error) {
       set({ isLoading: false });
@@ -36,7 +36,7 @@ export const useAuthStore = create<AuthState>((set) => ({
   logout: () => {
     const refreshToken = getRefreshToken();
     if (refreshToken) {
-      api.post("/admin/auth/logout", { refresh_token: refreshToken }).catch(() => {});
+      api.post("/auth/logout", { refresh_token: refreshToken }).catch(() => {});
     }
     clearTokens();
     set({ user: null });
@@ -45,7 +45,7 @@ export const useAuthStore = create<AuthState>((set) => ({
 
   fetchMe: async () => {
     try {
-      const res = await api.get("/admin/auth/me");
+      const res = await api.get("/auth/me");
       set({ user: res.data });
     } catch {
       clearTokens();
