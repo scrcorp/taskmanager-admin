@@ -30,7 +30,7 @@ export const useRoles = (): UseQueryResult<Role[], Error> => {
 /** 역할 생성 요청 데이터 타입 (Role creation request data type) */
 interface CreateRoleData {
   name: string;
-  level: number;
+  priority: number;
 }
 
 /**
@@ -66,7 +66,7 @@ export const useCreateRole = (): UseMutationResult<
 interface UpdateRoleData {
   id: string;
   name?: string;
-  level?: number;
+  priority?: number;
 }
 
 /**

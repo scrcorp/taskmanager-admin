@@ -17,11 +17,12 @@ export interface UserMe {
   email: string | null;
   phone: string | null;
   role_name: string;
-  role_level: number;
+  role_priority: number;
   organization_id: string;
   organization_name: string;
   company_code: string;
   is_active: boolean;
+  permissions: string[];
 }
 
 // Organization
@@ -117,7 +118,7 @@ export interface EvaluationSummary {
 export interface Role {
   id: string;
   name: string;
-  level: number;
+  priority: number;
   created_at: string;
 }
 
@@ -129,7 +130,7 @@ export interface User {
   email: string | null;
   phone: string | null;
   role_name: string;
-  role_level: number;
+  role_priority: number;
   is_active: boolean;
   created_at: string;
 }
@@ -274,14 +275,14 @@ export interface StoreUpdate {
  * Role creation request payload. */
 export interface RoleCreate {
   name: string;
-  level: number;
+  priority: number;
 }
 
 /** 역할 수정 요청 타입.
  * Role update request payload (partial). */
 export interface RoleUpdate {
   name?: string;
-  level?: number;
+  priority?: number;
 }
 
 /** 사용자 생성 요청 타입.

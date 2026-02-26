@@ -280,7 +280,7 @@ export async function handleMockRequest(
   if (url.endsWith("/admin/users") && method === "post") {
     const body = JSON.parse(config.data as string);
     return mockResponse(
-      { id: newId(), role_name: "Staff", role_level: 10, is_active: true, created_at: new Date().toISOString(), ...body },
+      { id: newId(), role_name: "Staff", role_priority: 40, is_active: true, created_at: new Date().toISOString(), ...body },
       config,
     );
   }

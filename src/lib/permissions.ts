@@ -1,58 +1,43 @@
 /**
- * 역할 기반 권한 유틸리티 — 역할별 권한 설계 문서 기반.
+ * Permission-Based RBAC 유틸리티.
  *
- * Role-based permission utilities derived from the permission design spec.
- * Role levels: Owner(10) > GM(20) > Supervisor(30) > Staff(40)
+ * Permission code 상수 (resource:action 형식).
+ * 실제 권한 확인은 usePermissions 훅의 hasPermission()으로 수행.
  */
 
-export const ROLE_LEVEL = {
-  OWNER: 10,
-  GM: 20,
-  SUPERVISOR: 30,
-  STAFF: 40,
+export const PERMISSIONS = {
+  STORES_CREATE: "stores:create",
+  STORES_READ: "stores:read",
+  STORES_UPDATE: "stores:update",
+  STORES_DELETE: "stores:delete",
+  USERS_CREATE: "users:create",
+  USERS_READ: "users:read",
+  USERS_UPDATE: "users:update",
+  USERS_DELETE: "users:delete",
+  ROLES_CREATE: "roles:create",
+  ROLES_READ: "roles:read",
+  ROLES_UPDATE: "roles:update",
+  ROLES_DELETE: "roles:delete",
+  EVALUATIONS_CREATE: "evaluations:create",
+  EVALUATIONS_READ: "evaluations:read",
+  EVALUATIONS_UPDATE: "evaluations:update",
+  EVALUATIONS_DELETE: "evaluations:delete",
+  SCHEDULES_CREATE: "schedules:create",
+  SCHEDULES_READ: "schedules:read",
+  SCHEDULES_UPDATE: "schedules:update",
+  SCHEDULES_DELETE: "schedules:delete",
+  ANNOUNCEMENTS_CREATE: "announcements:create",
+  ANNOUNCEMENTS_READ: "announcements:read",
+  ANNOUNCEMENTS_UPDATE: "announcements:update",
+  ANNOUNCEMENTS_DELETE: "announcements:delete",
+  CHECKLISTS_CREATE: "checklists:create",
+  CHECKLISTS_READ: "checklists:read",
+  CHECKLISTS_UPDATE: "checklists:update",
+  CHECKLISTS_DELETE: "checklists:delete",
+  TASKS_CREATE: "tasks:create",
+  TASKS_READ: "tasks:read",
+  TASKS_UPDATE: "tasks:update",
+  TASKS_DELETE: "tasks:delete",
+  DASHBOARD_READ: "dashboard:read",
+  AUDIT_LOG_READ: "audit_log:read",
 } as const;
-
-/** Owner만 가능 (level 1). Owner only. */
-export function isOwner(level: number): boolean {
-  return level <= ROLE_LEVEL.OWNER;
-}
-
-/** Owner + GM 가능 (level <= 2). Owner or GM. */
-export function isGMOrAbove(level: number): boolean {
-  return level <= ROLE_LEVEL.GM;
-}
-
-/** Owner + GM + SV 가능 (level <= 3). Supervisor or above. */
-export function isSupervisorOrAbove(level: number): boolean {
-  return level <= ROLE_LEVEL.SUPERVISOR;
-}
-
-/** 매장 CRUD 권한 — Owner만. Store CUD — Owner only. */
-export function canManageStores(level: number): boolean {
-  return isOwner(level);
-}
-
-/** 근무조/직책 CRUD 권한 — Owner + GM. Shift/Position CUD. */
-export function canManageStoreConfig(level: number): boolean {
-  return isGMOrAbove(level);
-}
-
-/** 체크리스트 CRUD 권한 — Owner + GM. Checklist CUD. */
-export function canManageChecklists(level: number): boolean {
-  return isGMOrAbove(level);
-}
-
-/** 추가 업무 CRUD 권한 — Owner + GM. Task CUD. */
-export function canManageTasks(level: number): boolean {
-  return isGMOrAbove(level);
-}
-
-/** 공지사항 CRUD 권한 — Owner + GM. Announcement CUD. */
-export function canManageAnnouncements(level: number): boolean {
-  return isGMOrAbove(level);
-}
-
-/** 사용자 CRUD 권한 — Owner + GM. User CUD. */
-export function canManageUsers(level: number): boolean {
-  return isGMOrAbove(level);
-}

@@ -28,7 +28,7 @@ vi.mock("@/lib/api", () => ({
 const mockUsers: User[] = [
   {
     id: "u1", username: "admin", full_name: "Admin", email: null,
-    phone: null, role_name: "admin", role_level: 1, is_active: true,
+    phone: null, role_name: "admin", role_priority: 1, is_active: true,
     created_at: "2026-01-01T00:00:00Z",
   },
 ];
@@ -90,7 +90,7 @@ describe("useUsers hooks", () => {
     const { default: api } = await import("@/lib/api");
     const newUser: User = {
       id: "u2", username: "staff1", full_name: "Staff One", email: null,
-      phone: null, role_name: "staff", role_level: 3, is_active: true,
+      phone: null, role_name: "staff", role_priority: 3, is_active: true,
       created_at: "2026-02-01T00:00:00Z",
     };
     vi.mocked(api.post).mockResolvedValueOnce({ data: newUser });

@@ -16,6 +16,7 @@ import {
   LogOut,
   Building2,
   Star,
+  FileSearch,
 } from "lucide-react";
 import React from "react";
 import { useAuthStore } from "@/stores/authStore";
@@ -43,6 +44,7 @@ const navItems: NavItem[] = [
   { href: "/tasks", label: "Tasks", icon: Zap },
   { href: "/announcements", label: "Notices", icon: Megaphone },
   { href: "/evaluations", label: "Evaluations", icon: Star },
+  { href: "/audit-log", label: "Audit Log", icon: FileSearch },
   { href: "/notifications", label: "Alerts", icon: Bell },
 ];
 

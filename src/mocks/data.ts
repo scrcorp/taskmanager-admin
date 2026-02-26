@@ -47,19 +47,29 @@ export const mockMe: UserMe = {
   email: "admin@taskmanager.io",
   phone: "010-1234-5678",
   role_name: "Super Admin",
-  role_level: 100,
+  role_priority: 10,
   organization_id: ORG_ID,
   organization_name: "TaskManager Demo Org",
   company_code: "DEMO",
   is_active: true,
+  permissions: [
+    "announcements:create", "announcements:delete", "announcements:read", "announcements:update",
+    "audit_log:read", "checklists:create", "checklists:delete", "checklists:read", "checklists:update",
+    "dashboard:read", "evaluations:create", "evaluations:delete", "evaluations:read", "evaluations:update",
+    "roles:create", "roles:delete", "roles:read", "roles:update",
+    "schedules:create", "schedules:delete", "schedules:read", "schedules:update",
+    "stores:create", "stores:delete", "stores:read", "stores:update",
+    "tasks:create", "tasks:delete", "tasks:read", "tasks:update",
+    "users:create", "users:delete", "users:read", "users:update",
+  ],
 };
 
 // ─── Roles ────────────────────────────────────────────
 
 export const mockRoles: Role[] = [
-  { id: ROLE_IDS[0], name: "Super Admin", level: 100, created_at: "2025-01-01T00:00:00Z" },
-  { id: ROLE_IDS[1], name: "Manager", level: 50, created_at: "2025-01-01T00:00:00Z" },
-  { id: ROLE_IDS[2], name: "Staff", level: 10, created_at: "2025-01-01T00:00:00Z" },
+  { id: ROLE_IDS[0], name: "Owner", priority: 10, created_at: "2025-01-01T00:00:00Z" },
+  { id: ROLE_IDS[1], name: "GM", priority: 20, created_at: "2025-01-01T00:00:00Z" },
+  { id: ROLE_IDS[2], name: "Staff", priority: 40, created_at: "2025-01-01T00:00:00Z" },
 ];
 
 // ─── Stores ───────────────────────────────────────────
@@ -111,11 +121,11 @@ export const mockStoreDetails: Record<string, StoreDetail> = {
 // ─── Users ────────────────────────────────────────────
 
 export const mockUsers: User[] = [
-  { id: USER_IDS[0], username: "admin", full_name: "Admin User", email: "admin@taskmanager.io", phone: "010-1234-5678", role_name: "Super Admin", role_level: 100, is_active: true, created_at: "2025-01-01T00:00:00Z" },
-  { id: USER_IDS[1], username: "manager01", full_name: "Kim Manager", email: "kim@taskmanager.io", phone: "010-2345-6789", role_name: "Manager", role_level: 50, is_active: true, created_at: "2025-03-15T09:00:00Z" },
-  { id: USER_IDS[2], username: "staff01", full_name: "Lee Staff", email: "lee@taskmanager.io", phone: "010-3456-7890", role_name: "Staff", role_level: 10, is_active: true, created_at: "2025-04-01T09:00:00Z" },
-  { id: USER_IDS[3], username: "staff02", full_name: "Park Worker", email: null, phone: "010-4567-8901", role_name: "Staff", role_level: 10, is_active: true, created_at: "2025-05-10T09:00:00Z" },
-  { id: USER_IDS[4], username: "inactive01", full_name: "Choi Former", email: "choi@taskmanager.io", phone: null, role_name: "Staff", role_level: 10, is_active: false, created_at: "2025-02-20T09:00:00Z" },
+  { id: USER_IDS[0], username: "admin", full_name: "Admin User", email: "admin@taskmanager.io", phone: "010-1234-5678", role_name: "Owner", role_priority: 10, is_active: true, created_at: "2025-01-01T00:00:00Z" },
+  { id: USER_IDS[1], username: "manager01", full_name: "Kim Manager", email: "kim@taskmanager.io", phone: "010-2345-6789", role_name: "GM", role_priority: 20, is_active: true, created_at: "2025-03-15T09:00:00Z" },
+  { id: USER_IDS[2], username: "staff01", full_name: "Lee Staff", email: "lee@taskmanager.io", phone: "010-3456-7890", role_name: "Staff", role_priority: 40, is_active: true, created_at: "2025-04-01T09:00:00Z" },
+  { id: USER_IDS[3], username: "staff02", full_name: "Park Worker", email: null, phone: "010-4567-8901", role_name: "Staff", role_priority: 40, is_active: true, created_at: "2025-05-10T09:00:00Z" },
+  { id: USER_IDS[4], username: "inactive01", full_name: "Choi Former", email: "choi@taskmanager.io", phone: null, role_name: "Staff", role_priority: 40, is_active: false, created_at: "2025-02-20T09:00:00Z" },
 ];
 
 /** 사용자별 소속 매장 (User store assignments) */

@@ -39,7 +39,7 @@ describe("authStore", () => {
       email: null,
       phone: null,
       role_name: "admin",
-      role_level: 1,
+      role_priority: 1,
       organization_id: "org1",
       organization_name: "Test Org",
       company_code: "TEST01",
@@ -82,7 +82,7 @@ describe("authStore", () => {
       username: "admin",
       full_name: "Admin",
       role_name: "admin",
-      role_level: 1,
+      role_priority: 1,
     };
     vi.mocked(api.get).mockResolvedValueOnce({ data: mockUser });
 
