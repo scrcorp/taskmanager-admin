@@ -55,16 +55,15 @@ function shiftDate(dateStr: string, days: number): string {
   return toDateStr(d);
 }
 
-/** 주의 월요일~일요일 날짜 배열 반환 (Return Mon-Sun date array for the week) */
+/** 주의 일요일~토요일 날짜 배열 반환 (Return Sun-Sat date array for the week) */
 function getWeekDays(dateStr: string): string[] {
   const d = new Date(dateStr + "T00:00:00");
   const dayOfWeek = d.getDay(); // 0=Sun, 1=Mon, ...
-  const diff = dayOfWeek === 0 ? -6 : 1 - dayOfWeek; // shift to Monday
-  const monday = new Date(d);
-  monday.setDate(d.getDate() + diff);
+  const sunday = new Date(d);
+  sunday.setDate(d.getDate() - dayOfWeek);
   return Array.from({ length: 7 }, (_, i) => {
-    const day = new Date(monday);
-    day.setDate(monday.getDate() + i);
+    const day = new Date(sunday);
+    day.setDate(sunday.getDate() + i);
     return toDateStr(day);
   });
 }
@@ -76,7 +75,7 @@ function getMonthCalendar(dateStr: string): string[][] {
   const month = d.getMonth();
   const firstDay = new Date(year, month, 1);
   const dayOfWeek = firstDay.getDay(); // 0=Sun
-  const startOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+  const startOffset = -dayOfWeek;
   const start = new Date(firstDay);
   start.setDate(firstDay.getDate() + startOffset);
 

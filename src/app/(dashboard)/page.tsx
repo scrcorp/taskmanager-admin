@@ -59,13 +59,13 @@ function getDateRange(range: DateRange): { dateFrom: string; dateTo: string } {
       return { dateFrom: today, dateTo: today };
     case "week": {
       const day = now.getDay();
-      const monday = new Date(now);
-      monday.setDate(now.getDate() - (day === 0 ? 6 : day - 1));
-      const sunday = new Date(monday);
-      sunday.setDate(monday.getDate() + 6);
+      const sunday = new Date(now);
+      sunday.setDate(now.getDate() - day);
+      const saturday = new Date(sunday);
+      saturday.setDate(sunday.getDate() + 6);
       return {
-        dateFrom: monday.toISOString().split("T")[0],
-        dateTo: sunday.toISOString().split("T")[0],
+        dateFrom: sunday.toISOString().split("T")[0],
+        dateTo: saturday.toISOString().split("T")[0],
       };
     }
     case "month": {
