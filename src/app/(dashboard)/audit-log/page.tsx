@@ -18,7 +18,7 @@ import {
   EmptyState,
   LoadingSpinner,
 } from "@/components/ui";
-import { formatDate } from "@/lib/utils";
+import { formatFixedDate, formatDateTime } from "@/lib/utils";
 
 export default function AuditLogPage(): React.ReactElement {
   const { hasPermission } = usePermissions();
@@ -50,20 +50,11 @@ export default function AuditLogPage(): React.ReactElement {
 
   const columns = [
     {
-      key: "completed_at",
-      header: "완료 시각",
-      render: (item: AuditLogEntry) => (
-        <span className="text-xs text-text-secondary whitespace-nowrap">
-          {item.completed_at ? formatDate(item.completed_at) : "-"}
-        </span>
-      ),
-    },
-    {
       key: "work_date",
       header: "근무일",
       render: (item: AuditLogEntry) => (
         <span className="text-xs text-text-secondary whitespace-nowrap">
-          {item.work_date}
+          {formatFixedDate(item.work_date)}
         </span>
       ),
     },
@@ -93,6 +84,15 @@ export default function AuditLogPage(): React.ReactElement {
       header: "메모",
       render: (item: AuditLogEntry) => (
         <span className="text-xs text-text-muted">{item.note || "-"}</span>
+      ),
+    },
+    {
+      key: "completed_at",
+      header: "완료 시각",
+      render: (item: AuditLogEntry) => (
+        <span className="text-xs text-text-secondary whitespace-nowrap">
+          {item.completed_at ? formatDateTime(item.completed_at) : "-"}
+        </span>
       ),
     },
   ];
