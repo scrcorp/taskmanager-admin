@@ -26,7 +26,7 @@ import {
   LoadingSpinner,
 } from "@/components/ui";
 import { useToast } from "@/components/ui/Toast";
-import { formatDateTime, formatFixedDate, timeAgo } from "@/lib/utils";
+import { formatDateTime, formatFixedDate, timeAgo, parseApiError } from "@/lib/utils";
 
 
 /** 추가 업무 상세 페이지 — 업무 상세 조회, 수정, 상태 변경, 삭제.
@@ -82,7 +82,7 @@ export default function TaskDetailPage() {
           toast({ type: "success", message: "업무가 수정되었습니다 (Task updated)" });
           setShowEdit(false);
         },
-        onError: () => toast({ type: "error", message: "수정 실패 (Update failed)" }),
+        onError: (err) => toast({ type: "error", message: parseApiError(err, "수정 실패 (Update failed)") }),
       }
     );
   };
@@ -95,7 +95,7 @@ export default function TaskDetailPage() {
         toast({ type: "success", message: "업무가 삭제되었습니다 (Task deleted)" });
         router.push("/tasks");
       },
-      onError: () => toast({ type: "error", message: "삭제 실패 (Delete failed)" }),
+      onError: (err) => toast({ type: "error", message: parseApiError(err, "삭제 실패 (Delete failed)") }),
     });
   };
 
@@ -107,7 +107,7 @@ export default function TaskDetailPage() {
       {
         onSuccess: () =>
           toast({ type: "success", message: "상태가 변경되었습니다 (Status changed)" }),
-        onError: () => toast({ type: "error", message: "상태 변경 실패 (Status change failed)" }),
+        onError: (err) => toast({ type: "error", message: parseApiError(err, "상태 변경 실패 (Status change failed)") }),
       }
     );
   };

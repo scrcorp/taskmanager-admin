@@ -19,8 +19,9 @@ import { Input } from "@/components/ui/Input";
 import { Table, Badge, Modal, Select } from "@/components/ui";
 import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
 import { useToast } from "@/components/ui/Toast";
-import { formatDate } from "@/lib/utils";
+import { formatDate, parseApiError } from "@/lib/utils";
 import { usePermissions } from "@/hooks/usePermissions";
+import { PERMISSIONS } from "@/lib/permissions";
 import type { User, Store, Role } from "@/types";
 
 /** 사용자 생성 폼 데이터 / User creation form data */
@@ -70,7 +71,8 @@ const INITIAL_FILTERS: UserFilters = {
 export default function UsersPage(): React.ReactElement {
   const router = useRouter();
   const { toast } = useToast();
-  const { canManageUsers } = usePermissions();
+  const { hasPermission } = usePermissions();
+  const canManageUsers = hasPermission(PERMISSIONS.USERS_CREATE);
 
   /** 데이터 훅 / Data hooks */
   const { data: users, isLoading: usersLoading } = useUsers();
@@ -148,8 +150,8 @@ export default function UsersPage(): React.ReactElement {
       toast({ type: "success", message: "Staff member created successfully!" });
       setIsCreateOpen(false);
       setCreateForm(INITIAL_FORM);
-    } catch {
-      toast({ type: "error", message: "Failed to create staff member." });
+    } catch (err) {
+      toast({ type: "error", message: parseApiError(err, "Failed to create staff member.") });
     }
   }, [createForm, createUser, toast]);
 

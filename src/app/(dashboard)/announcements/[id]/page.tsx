@@ -29,7 +29,7 @@ import {
   EmptyState,
 } from "@/components/ui";
 import { useToast } from "@/components/ui/Toast";
-import { formatDate } from "@/lib/utils";
+import { formatDate, parseApiError } from "@/lib/utils";
 import type { Announcement, Store } from "@/types";
 
 export default function AnnouncementDetailPage(): React.ReactElement {
@@ -84,8 +84,8 @@ export default function AnnouncementDetailPage(): React.ReactElement {
           toast({ type: "success", message: "Notice updated successfully." });
           setIsEditOpen(false);
         },
-        onError: (): void => {
-          toast({ type: "error", message: "Failed to update notice." });
+        onError: (err): void => {
+          toast({ type: "error", message: parseApiError(err, "Failed to update notice.") });
         },
       },
     );
@@ -97,8 +97,8 @@ export default function AnnouncementDetailPage(): React.ReactElement {
         toast({ type: "success", message: "Notice deleted successfully." });
         router.push("/announcements");
       },
-      onError: (): void => {
-        toast({ type: "error", message: "Failed to delete notice." });
+      onError: (err): void => {
+        toast({ type: "error", message: parseApiError(err, "Failed to delete notice.") });
       },
     });
   }, [announcementId, deleteAnnouncement, toast, router]);

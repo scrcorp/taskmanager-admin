@@ -30,8 +30,9 @@ import {
   LoadingSpinner,
 } from "@/components/ui";
 import { useToast } from "@/components/ui/Toast";
-import { formatDate } from "@/lib/utils";
+import { formatDate, parseApiError } from "@/lib/utils";
 import { usePermissions } from "@/hooks/usePermissions";
+import { PERMISSIONS } from "@/lib/permissions";
 import type { Announcement, Store } from "@/types";
 
 const PER_PAGE: number = 20;
@@ -39,7 +40,8 @@ const PER_PAGE: number = 20;
 export default function AnnouncementsPage(): React.ReactElement {
   const router = useRouter();
   const { toast } = useToast();
-  const { canManageAnnouncements } = usePermissions();
+  const { hasPermission } = usePermissions();
+  const canManageAnnouncements = hasPermission(PERMISSIONS.ANNOUNCEMENTS_CREATE);
 
   // -- Pagination state --
   const [page, setPage] = useState<number>(1);
@@ -183,8 +185,8 @@ export default function AnnouncementsPage(): React.ReactElement {
             toast({ type: "success", message: "Notice updated successfully." });
             setIsFormOpen(false);
           },
-          onError: (): void => {
-            toast({ type: "error", message: "Failed to update notice." });
+          onError: (err): void => {
+            toast({ type: "error", message: parseApiError(err, "Failed to update notice.") });
           },
         },
       );
@@ -194,8 +196,8 @@ export default function AnnouncementsPage(): React.ReactElement {
           toast({ type: "success", message: "Notice created successfully." });
           setIsFormOpen(false);
         },
-        onError: (): void => {
-          toast({ type: "error", message: "Failed to create notice." });
+        onError: (err): void => {
+          toast({ type: "error", message: parseApiError(err, "Failed to create notice.") });
         },
       });
     }
@@ -208,8 +210,8 @@ export default function AnnouncementsPage(): React.ReactElement {
         toast({ type: "success", message: "Notice deleted successfully." });
         setDeleteId(null);
       },
-      onError: (): void => {
-        toast({ type: "error", message: "Failed to delete notice." });
+      onError: (err): void => {
+        toast({ type: "error", message: parseApiError(err, "Failed to delete notice.") });
       },
     });
   }, [deleteId, deleteAnnouncement, toast]);

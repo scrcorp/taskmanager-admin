@@ -28,16 +28,17 @@ import {
   LoadingSpinner,
 } from "@/components/ui";
 import { useToast } from "@/components/ui/Toast";
-import { formatDate } from "@/lib/utils";
+import { formatDate, parseApiError } from "@/lib/utils";
 import { usePermissions } from "@/hooks/usePermissions";
+import { PERMISSIONS } from "@/lib/permissions";
 import type { EvalTemplate, Evaluation as EvalType } from "@/types";
 
 const PER_PAGE: number = 20;
 
 export default function EvaluationsPage(): React.ReactElement {
   const { toast } = useToast();
-  const { roleLevel } = usePermissions();
-  const isGMOrAbove = roleLevel <= 20;
+  const { hasPermission } = usePermissions();
+  const isGMOrAbove = hasPermission(PERMISSIONS.EVALUATIONS_CREATE);
 
   const [activeTab, setActiveTab] = useState<"templates" | "evaluations">("templates");
   const [templatePage, setTemplatePage] = useState<number>(1);
@@ -74,8 +75,8 @@ export default function EvaluationsPage(): React.ReactElement {
       setTemplateName("");
       setTemplateTargetRole("");
       setTemplateEvalType("adhoc");
-    } catch {
-      toast({ type: "error", message: "Failed to create template" });
+    } catch (err) {
+      toast({ type: "error", message: parseApiError(err, "Failed to create template") });
     }
   }, [templateName, templateTargetRole, templateEvalType, createTemplate, toast]);
 
@@ -85,8 +86,8 @@ export default function EvaluationsPage(): React.ReactElement {
       await deleteTemplate.mutateAsync(deleteTemplateId);
       toast({ type: "success", message: "Template deleted" });
       setDeleteTemplateId(null);
-    } catch {
-      toast({ type: "error", message: "Failed to delete template" });
+    } catch (err) {
+      toast({ type: "error", message: parseApiError(err, "Failed to delete template") });
     }
   }, [deleteTemplateId, deleteTemplate, toast]);
 
@@ -94,8 +95,8 @@ export default function EvaluationsPage(): React.ReactElement {
     try {
       await submitEvaluation.mutateAsync(evalId);
       toast({ type: "success", message: "Evaluation submitted" });
-    } catch {
-      toast({ type: "error", message: "Failed to submit evaluation" });
+    } catch (err) {
+      toast({ type: "error", message: parseApiError(err, "Failed to submit evaluation") });
     }
   }, [submitEvaluation, toast]);
 

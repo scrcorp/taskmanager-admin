@@ -12,7 +12,7 @@ import { ChevronLeft, Check, X, Clock, Trash2, ExternalLink } from "lucide-react
 import { useAssignment, useDeleteAssignment } from "@/hooks/useAssignments";
 import { Button, Card, Badge, LoadingSpinner, EmptyState, ConfirmDialog } from "@/components/ui";
 import { useToast } from "@/components/ui/Toast";
-import { formatFixedDate } from "@/lib/utils";
+import { formatFixedDate, parseApiError } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 import type { AssignmentDetail, ChecklistSnapshotItem } from "@/types";
 
@@ -66,8 +66,8 @@ export default function AssignmentDetailPage(): React.ReactElement {
         toast({ type: "success", message: "Assignment deleted successfully." });
         router.push("/schedules");
       },
-      onError: (): void => {
-        toast({ type: "error", message: "Failed to delete assignment." });
+      onError: (err): void => {
+        toast({ type: "error", message: parseApiError(err, "Failed to delete assignment.") });
       },
     });
   }, [assignmentId, deleteAssignment, toast, router]);

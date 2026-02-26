@@ -34,7 +34,7 @@ import type {
   ChecklistItem,
   Assignment,
 } from "@/types";
-import { cn, formatFixedDateWithDay } from "@/lib/utils";
+import { cn, formatFixedDateWithDay, parseApiError } from "@/lib/utils";
 
 // ─── View mode types ────────────────────────────────────
 
@@ -251,8 +251,8 @@ function BulkAssignModal({
       const aRecent: boolean = recentUserIds.has(a.id);
       const bRecent: boolean = recentUserIds.has(b.id);
       if (aRecent !== bRecent) return aRecent ? -1 : 1;
-      // Higher role_level first: staff(4) → supervisor(3) → manager(2) → admin(1)
-      if (a.role_level !== b.role_level) return b.role_level - a.role_level;
+      // Higher role_priority first: staff(4) → supervisor(3) → manager(2) → admin(1)
+      if (a.role_priority !== b.role_priority) return b.role_priority - a.role_priority;
       // Alphabetical
       return a.full_name.localeCompare(b.full_name);
     });
@@ -283,8 +283,8 @@ function BulkAssignModal({
       setSelectedIds([]);
       setSearchQuery("");
       onClose();
-    } catch {
-      toast({ type: "error", message: "Failed to assign workers." });
+    } catch (err) {
+      toast({ type: "error", message: parseApiError(err, "Failed to assign workers.") });
     }
   }, [selectedIds, bulkCreate, storeId, shiftId, positionId, date, toast, onClose]);
 
@@ -425,8 +425,8 @@ function ReassignModal({
       const aRecent: boolean = recentUserIds.has(a.id);
       const bRecent: boolean = recentUserIds.has(b.id);
       if (aRecent !== bRecent) return aRecent ? -1 : 1;
-      // Higher role_level first: staff(4) → supervisor(3) → manager(2) → admin(1)
-      if (a.role_level !== b.role_level) return b.role_level - a.role_level;
+      // Higher role_priority first: staff(4) → supervisor(3) → manager(2) → admin(1)
+      if (a.role_priority !== b.role_priority) return b.role_priority - a.role_priority;
       // Alphabetical
       return a.full_name.localeCompare(b.full_name);
     });
@@ -448,8 +448,8 @@ function ReassignModal({
       setSelectedUserId(null);
       setSearchQuery("");
       onClose();
-    } catch {
-      toast({ type: "error", message: "Failed to reassign worker." });
+    } catch (err) {
+      toast({ type: "error", message: parseApiError(err, "Failed to reassign worker.") });
     } finally {
       setIsProcessing(false);
     }
@@ -697,8 +697,8 @@ function CreateChecklistModal({
       setTitle("");
       setItemsText("");
       onClose();
-    } catch {
-      toast({ type: "error", message: "Failed to create checklist template." });
+    } catch (err) {
+      toast({ type: "error", message: parseApiError(err, "Failed to create checklist template.") });
     }
   }, [title, parsedItems, createTemplate, bulkCreateItems, storeId, shiftId, positionId, toast, onClose]);
 
@@ -933,8 +933,8 @@ function StoreScheduleSection({
       await deleteAssignment.mutateAsync(deleteTarget.id);
       toast({ type: "success", message: "Assignment removed." });
       setDeleteTarget(null);
-    } catch {
-      toast({ type: "error", message: "Failed to remove assignment." });
+    } catch (err) {
+      toast({ type: "error", message: parseApiError(err, "Failed to remove assignment.") });
     }
   }, [deleteTarget, deleteAssignment, toast]);
 

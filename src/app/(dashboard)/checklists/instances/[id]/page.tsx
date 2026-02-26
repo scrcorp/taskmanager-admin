@@ -18,7 +18,7 @@ import {
 } from "@/hooks/useChecklistInstances";
 import { Button, Card, Input, LoadingSpinner, EmptyState, useToast } from "@/components/ui";
 import { ChecklistInstanceDetail } from "@/components/checklists/ChecklistInstanceDetail";
-import { formatDateTime } from "@/lib/utils";
+import { formatDateTime, parseApiError } from "@/lib/utils";
 import type { ChecklistInstanceComment } from "@/types";
 
 export default function ChecklistInstanceDetailPage(): React.ReactElement {
@@ -47,8 +47,8 @@ export default function ChecklistInstanceDetailPage(): React.ReactElement {
       });
       setCommentText("");
       toast({ type: "success", message: "Comment added." });
-    } catch {
-      toast({ type: "error", message: "Failed to add comment." });
+    } catch (err) {
+      toast({ type: "error", message: parseApiError(err, "Failed to add comment.") });
     }
   };
 

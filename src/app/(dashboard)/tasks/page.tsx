@@ -26,8 +26,9 @@ import {
   LoadingSpinner,
 } from "@/components/ui";
 import { useToast } from "@/components/ui/Toast";
-import { formatFixedDate } from "@/lib/utils";
+import { formatFixedDate, parseApiError } from "@/lib/utils";
 import { usePermissions } from "@/hooks/usePermissions";
+import { PERMISSIONS } from "@/lib/permissions";
 import type { AdditionalTask, Store, User } from "@/types";
 
 /** 작업 상태에 따른 뱃지 변형 매핑 (Status to badge variant mapping) */
@@ -55,7 +56,8 @@ const PER_PAGE: number = 20;
 export default function TasksPage(): React.ReactElement {
   const router = useRouter();
   const { toast } = useToast();
-  const { canManageTasks } = usePermissions();
+  const { hasPermission } = usePermissions();
+  const canManageTasks = hasPermission(PERMISSIONS.TASKS_CREATE);
 
   // -- Filter state --
   const [filterStoreId, setFilterStoreId] = useState<string>("");
@@ -249,8 +251,8 @@ export default function TasksPage(): React.ReactElement {
           toast({ type: "success", message: "Task created successfully." });
           setIsCreateOpen(false);
         },
-        onError: (): void => {
-          toast({ type: "error", message: "Failed to create task." });
+        onError: (err): void => {
+          toast({ type: "error", message: parseApiError(err, "Failed to create task.") });
         },
       },
     );
@@ -263,8 +265,8 @@ export default function TasksPage(): React.ReactElement {
         toast({ type: "success", message: "Task deleted successfully." });
         setDeleteId(null);
       },
-      onError: (): void => {
-        toast({ type: "error", message: "Failed to delete task." });
+      onError: (err): void => {
+        toast({ type: "error", message: parseApiError(err, "Failed to delete task.") });
       },
     });
   }, [deleteId, deleteTask, toast]);

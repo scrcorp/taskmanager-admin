@@ -17,7 +17,7 @@ import {
   LoadingSpinner,
 } from "@/components/ui";
 import { useToast } from "@/components/ui/Toast";
-import { timeAgo } from "@/lib/utils";
+import { timeAgo, parseApiError } from "@/lib/utils";
 import type { Notification } from "@/types";
 
 /** 알림 페이지 — 알림 목록 조회, 읽음 처리, 전체 읽음 처리.
@@ -43,7 +43,7 @@ export default function NotificationsPage() {
    *  Mark a single notification as read. */
   const handleMarkRead = (notificationId: string): void => {
     markRead.mutate(notificationId, {
-      onError: () => toast({ type: "error", message: "읽음 처리 실패 (Mark read failed)" }),
+      onError: (err) => toast({ type: "error", message: parseApiError(err, "읽음 처리 실패 (Mark read failed)") }),
     });
   };
 
@@ -53,7 +53,7 @@ export default function NotificationsPage() {
     markAllRead.mutate(undefined, {
       onSuccess: () =>
         toast({ type: "success", message: "모든 알림이 읽음 처리되었습니다 (All marked as read)" }),
-      onError: () => toast({ type: "error", message: "전체 읽음 처리 실패 (Mark all read failed)" }),
+      onError: (err) => toast({ type: "error", message: parseApiError(err, "전체 읽음 처리 실패 (Mark all read failed)") }),
     });
   };
 

@@ -62,8 +62,9 @@ import {
 import { SortableList } from "@/components/ui/SortableList";
 import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
 import { useToast } from "@/components/ui/Toast";
-import { cn } from "@/lib/utils";
+import { cn, parseApiError } from "@/lib/utils";
 import { usePermissions } from "@/hooks/usePermissions";
+import { PERMISSIONS } from "@/lib/permissions";
 import type {
   Shift,
   Position,
@@ -175,7 +176,10 @@ export default function StoreDetailPage(): React.ReactElement {
   const storeId: string = params.id as string;
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const { canManageStoreConfig, canManageChecklists, roleLevel } = usePermissions();
+  const { hasPermission } = usePermissions();
+  const canManageStoreConfig = hasPermission(PERMISSIONS.STORES_UPDATE);
+  const canManageChecklists = hasPermission(PERMISSIONS.CHECKLISTS_CREATE);
+  const canUpdateSettings = hasPermission(PERMISSIONS.STORES_UPDATE);
 
   /** 현재 활성 탭 / Currently active tab */
   const [activeTab, setActiveTab] = useState<TabName>("shifts-positions");
@@ -394,8 +398,8 @@ export default function StoreDetailPage(): React.ReactElement {
       toast({ type: "success", message: "Shift created successfully!" });
       setIsShiftCreateOpen(false);
       setShiftCreateForm(INITIAL_SHIFT_FORM);
-    } catch {
-      toast({ type: "error", message: "Failed to create shift." });
+    } catch (err) {
+      toast({ type: "error", message: parseApiError(err, "Failed to create shift.") });
     }
   }, [shiftCreateForm, createShift, storeId, toast, shiftList]);
 
@@ -421,8 +425,8 @@ export default function StoreDetailPage(): React.ReactElement {
       setIsShiftEditOpen(false);
       setEditingShiftId(null);
       setShiftEditForm(INITIAL_SHIFT_FORM);
-    } catch {
-      toast({ type: "error", message: "Failed to update shift." });
+    } catch (err) {
+      toast({ type: "error", message: parseApiError(err, "Failed to update shift.") });
     }
   }, [editingShiftId, shiftEditForm, updateShift, storeId, toast]);
 
@@ -440,8 +444,8 @@ export default function StoreDetailPage(): React.ReactElement {
           ),
         );
         queryClient.invalidateQueries({ queryKey: ["shifts", storeId] });
-      } catch {
-        toast({ type: "error", message: "Failed to reorder shifts." });
+      } catch (err) {
+        toast({ type: "error", message: parseApiError(err, "Failed to reorder shifts.") });
         queryClient.invalidateQueries({ queryKey: ["shifts", storeId] });
       }
     },
@@ -466,8 +470,8 @@ export default function StoreDetailPage(): React.ReactElement {
       setIsShiftDeleteOpen(false);
       setDeletingShiftId(null);
       setDeletingShiftName("");
-    } catch {
-      toast({ type: "error", message: "Failed to delete shift." });
+    } catch (err) {
+      toast({ type: "error", message: parseApiError(err, "Failed to delete shift.") });
     }
   }, [deletingShiftId, deleteShift, storeId, toast]);
 
@@ -490,8 +494,8 @@ export default function StoreDetailPage(): React.ReactElement {
       toast({ type: "success", message: "Position created successfully!" });
       setIsPosCreateOpen(false);
       setPosCreateForm(INITIAL_SHIFT_FORM);
-    } catch {
-      toast({ type: "error", message: "Failed to create position." });
+    } catch (err) {
+      toast({ type: "error", message: parseApiError(err, "Failed to create position.") });
     }
   }, [posCreateForm, createPosition, storeId, toast, positionList]);
 
@@ -517,8 +521,8 @@ export default function StoreDetailPage(): React.ReactElement {
       setIsPosEditOpen(false);
       setEditingPosId(null);
       setPosEditForm(INITIAL_SHIFT_FORM);
-    } catch {
-      toast({ type: "error", message: "Failed to update position." });
+    } catch (err) {
+      toast({ type: "error", message: parseApiError(err, "Failed to update position.") });
     }
   }, [editingPosId, posEditForm, updatePosition, storeId, toast]);
 
@@ -536,8 +540,8 @@ export default function StoreDetailPage(): React.ReactElement {
           ),
         );
         queryClient.invalidateQueries({ queryKey: ["positions", storeId] });
-      } catch {
-        toast({ type: "error", message: "Failed to reorder positions." });
+      } catch (err) {
+        toast({ type: "error", message: parseApiError(err, "Failed to reorder positions.") });
         queryClient.invalidateQueries({ queryKey: ["positions", storeId] });
       }
     },
@@ -562,8 +566,8 @@ export default function StoreDetailPage(): React.ReactElement {
       setIsPosDeleteOpen(false);
       setDeletingPosId(null);
       setDeletingPosName("");
-    } catch {
-      toast({ type: "error", message: "Failed to delete position." });
+    } catch (err) {
+      toast({ type: "error", message: parseApiError(err, "Failed to delete position.") });
     }
   }, [deletingPosId, deletePosition, storeId, toast]);
 
@@ -588,8 +592,8 @@ export default function StoreDetailPage(): React.ReactElement {
       toast({ type: "success", message: "Checklist template created!" });
       setIsTemplateCreateOpen(false);
       setTemplateCreateForm(INITIAL_TEMPLATE_FORM);
-    } catch {
-      toast({ type: "error", message: "Failed to create checklist template." });
+    } catch (err) {
+      toast({ type: "error", message: parseApiError(err, "Failed to create checklist template.") });
     }
   }, [templateCreateForm, createTemplate, storeId, toast]);
 
@@ -620,8 +624,8 @@ export default function StoreDetailPage(): React.ReactElement {
       setIsTemplateEditOpen(false);
       setEditingTemplateId(null);
       setTemplateEditForm(INITIAL_TEMPLATE_FORM);
-    } catch {
-      toast({ type: "error", message: "Failed to update checklist template." });
+    } catch (err) {
+      toast({ type: "error", message: parseApiError(err, "Failed to update checklist template.") });
     }
   }, [editingTemplateId, templateEditForm, updateTemplate, toast]);
 
@@ -646,8 +650,8 @@ export default function StoreDetailPage(): React.ReactElement {
       if (expandedTemplateId === deletingTemplateId) {
         setExpandedTemplateId(null);
       }
-    } catch {
-      toast({ type: "error", message: "Failed to delete checklist template." });
+    } catch (err) {
+      toast({ type: "error", message: parseApiError(err, "Failed to delete checklist template.") });
     }
   }, [deletingTemplateId, deleteTemplate, expandedTemplateId, toast]);
 
@@ -682,8 +686,8 @@ export default function StoreDetailPage(): React.ReactElement {
       toast({ type: "success", message: "Checklist item created!" });
       setIsItemCreateOpen(false);
       setItemCreateForm(INITIAL_ITEM_FORM);
-    } catch {
-      toast({ type: "error", message: "Failed to create checklist item." });
+    } catch (err) {
+      toast({ type: "error", message: parseApiError(err, "Failed to create checklist item.") });
     }
   }, [expandedTemplateId, itemCreateForm, createItem, toast, itemList]);
 
@@ -715,8 +719,8 @@ export default function StoreDetailPage(): React.ReactElement {
       setIsItemEditOpen(false);
       setEditingItemId(null);
       setItemEditForm(INITIAL_ITEM_FORM);
-    } catch {
-      toast({ type: "error", message: "Failed to update checklist item." });
+    } catch (err) {
+      toast({ type: "error", message: parseApiError(err, "Failed to update checklist item.") });
     }
   }, [editingItemId, itemEditForm, updateItem, expandedTemplateId, toast]);
 
@@ -738,8 +742,8 @@ export default function StoreDetailPage(): React.ReactElement {
       setIsItemDeleteOpen(false);
       setDeletingItemId(null);
       setDeletingItemTitle("");
-    } catch {
-      toast({ type: "error", message: "Failed to delete checklist item." });
+    } catch (err) {
+      toast({ type: "error", message: parseApiError(err, "Failed to delete checklist item.") });
     }
   }, [deletingItemId, deleteItem, expandedTemplateId, toast]);
 
@@ -760,8 +764,8 @@ export default function StoreDetailPage(): React.ReactElement {
         queryClient.invalidateQueries({
           queryKey: ["checklistItems", expandedTemplateId],
         });
-      } catch {
-        toast({ type: "error", message: "Failed to reorder items." });
+      } catch (err) {
+        toast({ type: "error", message: parseApiError(err, "Failed to reorder items.") });
         queryClient.invalidateQueries({
           queryKey: ["checklistItems", expandedTemplateId],
         });
@@ -840,8 +844,8 @@ export default function StoreDetailPage(): React.ReactElement {
     try {
       await updateStore.mutateAsync({ id: storeId, max_work_hours_weekly: val });
       toast({ type: "success", message: "Max work hours updated!" });
-    } catch {
-      toast({ type: "error", message: "Failed to update max work hours." });
+    } catch (err) {
+      toast({ type: "error", message: parseApiError(err, "Failed to update max work hours.") });
     }
   }, [maxWorkHoursWeekly, updateStore, storeId, toast]);
 
@@ -859,8 +863,8 @@ export default function StoreDetailPage(): React.ReactElement {
       toast({ type: "success", message: "Shift preset created!" });
       setIsPresetCreateOpen(false);
       setPresetCreateForm(INITIAL_PRESET_FORM);
-    } catch {
-      toast({ type: "error", message: "Failed to create shift preset." });
+    } catch (err) {
+      toast({ type: "error", message: parseApiError(err, "Failed to create shift preset.") });
     }
   }, [presetCreateForm, createPreset, storeId, toast]);
 
@@ -874,8 +878,8 @@ export default function StoreDetailPage(): React.ReactElement {
           is_active: !preset.is_active,
         });
         toast({ type: "success", message: `Preset ${preset.is_active ? "deactivated" : "activated"}!` });
-      } catch {
-        toast({ type: "error", message: "Failed to update preset." });
+      } catch (err) {
+        toast({ type: "error", message: parseApiError(err, "Failed to update preset.") });
       }
     },
     [updatePreset, storeId, toast],
@@ -900,8 +904,8 @@ export default function StoreDetailPage(): React.ReactElement {
       setIsPresetDeleteOpen(false);
       setDeletingPresetId(null);
       setDeletingPresetName("");
-    } catch {
-      toast({ type: "error", message: "Failed to delete shift preset." });
+    } catch (err) {
+      toast({ type: "error", message: parseApiError(err, "Failed to delete shift preset.") });
     }
   }, [deletingPresetId, deletePreset, storeId, toast]);
 
@@ -916,8 +920,8 @@ export default function StoreDetailPage(): React.ReactElement {
         overtime_threshold_daily: laborForm.overtime_threshold_daily ? Number(laborForm.overtime_threshold_daily) : null,
       });
       toast({ type: "success", message: "Labor law settings saved!" });
-    } catch {
-      toast({ type: "error", message: "Failed to save labor law settings." });
+    } catch (err) {
+      toast({ type: "error", message: parseApiError(err, "Failed to save labor law settings.") });
     }
   }, [laborForm, upsertLaborLaw, storeId, toast]);
 
@@ -1853,7 +1857,7 @@ export default function StoreDetailPage(): React.ReactElement {
                   size="sm"
                   onClick={handleSaveMaxWorkHours}
                   isLoading={updateStore.isPending}
-                  disabled={roleLevel > 20}
+                  disabled={!canUpdateSettings}
                 >
                   Save
                 </Button>
@@ -1868,7 +1872,7 @@ export default function StoreDetailPage(): React.ReactElement {
                 <Settings className="h-5 w-5 text-accent" />
                 <h2 className="text-lg font-bold text-text">Shift Presets</h2>
               </div>
-              {roleLevel <= 20 && (
+              {canUpdateSettings && (
                 <Button
                   variant="primary"
                   size="sm"
@@ -1911,7 +1915,7 @@ export default function StoreDetailPage(): React.ReactElement {
                     <p className="text-xs text-text-muted">
                       {preset.start_time} - {preset.end_time}
                     </p>
-                    {roleLevel <= 20 && (
+                    {canUpdateSettings && (
                       <div className="flex items-center gap-2 mt-1">
                         <Button
                           variant="ghost"
@@ -2005,7 +2009,7 @@ export default function StoreDetailPage(): React.ReactElement {
                     size="sm"
                     onClick={handleSaveLaborLaw}
                     isLoading={upsertLaborLaw.isPending}
-                    disabled={roleLevel > 20}
+                    disabled={!canUpdateSettings}
                   >
                     Save Settings
                   </Button>

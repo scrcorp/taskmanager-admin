@@ -20,8 +20,10 @@ import { useShifts } from "@/hooks/useShifts";
 import { usePositions } from "@/hooks/usePositions";
 import { Button, Input, Select, Card, Table, Modal, Badge, Pagination, LoadingSpinner } from "@/components/ui";
 import { useChecklistTemplates } from "@/hooks/useChecklists";
+import { useOvertimeAlerts } from "@/hooks/useOvertimeAlerts";
+import type { OvertimeAlert } from "@/hooks/useOvertimeAlerts";
 import { useToast } from "@/components/ui/Toast";
-import { formatFixedDate } from "@/lib/utils";
+import { formatFixedDate, parseApiError } from "@/lib/utils";
 import type { Assignment, Store, User, Shift, Position } from "@/types";
 
 /** 배정 상태에 따른 뱃지 변형 매핑 (Status to badge variant mapping) */
@@ -73,6 +75,12 @@ export default function AssignmentsListPage(): React.ReactElement {
   const { data: shifts } = useShifts(formStoreId || undefined);
   const { data: positions } = usePositions(formStoreId || undefined);
   const createAssignment = useCreateAssignment();
+
+  // Overtime alerts for selected store
+  const { data: overtimeAlerts } = useOvertimeAlerts(filterStoreId);
+  const activeAlerts: OvertimeAlert[] = (overtimeAlerts ?? []).filter(
+    (a: OvertimeAlert) => a.over_hours > 0,
+  );
 
   // 선택된 조합에 체크리스트 템플릿이 존재하는지 확인
   // Check if a checklist template exists for the selected combo
@@ -227,8 +235,8 @@ export default function AssignmentsListPage(): React.ReactElement {
           toast({ type: "success", message: "Assignment created successfully." });
           setIsCreateOpen(false);
         },
-        onError: (): void => {
-          toast({ type: "error", message: "Failed to create assignment." });
+        onError: (err): void => {
+          toast({ type: "error", message: parseApiError(err, "Failed to create assignment.") });
         },
       },
     );
@@ -301,6 +309,37 @@ export default function AssignmentsListPage(): React.ReactElement {
           </div>
         </div>
       </Card>
+
+      {/* Overtime Alerts Panel */}
+      {filterStoreId && activeAlerts.length > 0 && (
+        <Card className="mb-6" padding="p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <AlertTriangle size={16} className="text-danger" />
+            <h3 className="text-sm font-bold text-text">
+              Overtime Alerts
+            </h3>
+            <Badge variant="danger">
+              {activeAlerts.length}
+            </Badge>
+          </div>
+          <div className="space-y-2">
+            {activeAlerts.map((alert: OvertimeAlert) => (
+              <div
+                key={alert.user_id}
+                className="flex items-center justify-between py-2 px-3 rounded-lg bg-surface"
+              >
+                <span className="text-sm text-text">{alert.user_name}</span>
+                <div className="flex items-center gap-3">
+                  <span className="text-xs text-text-muted">
+                    {alert.total_hours.toFixed(1)}h / {alert.max_weekly}h
+                  </span>
+                  <Badge variant="danger">+{alert.over_hours.toFixed(1)}h</Badge>
+                </div>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
 
       {/* Table */}
       <Card padding="p-0">

@@ -35,8 +35,9 @@ import { Input } from "@/components/ui/Input";
 import { Badge, Modal, Select, ConfirmDialog } from "@/components/ui";
 import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
 import { useToast } from "@/components/ui/Toast";
-import { formatDate } from "@/lib/utils";
+import { formatDate, parseApiError } from "@/lib/utils";
 import { usePermissions } from "@/hooks/usePermissions";
+import { PERMISSIONS } from "@/lib/permissions";
 import type { User, Store, Role } from "@/types";
 
 /* -------------------------------------------------------------------------- */
@@ -73,7 +74,8 @@ export default function UserDetailPage(): React.ReactElement {
   const params = useParams();
   const userId: string = params.id as string;
   const { toast } = useToast();
-  const { canManageUsers } = usePermissions();
+  const { hasPermission } = usePermissions();
+  const canManageUsers = hasPermission(PERMISSIONS.USERS_UPDATE);
 
   /* ---- Data hooks -------------------------------------------------------- */
   const { data: user, isLoading: userLoading } = useUser(userId);
@@ -96,6 +98,9 @@ export default function UserDetailPage(): React.ReactElement {
 
   /* ---- Delete dialog state ----------------------------------------------- */
   const [isDeleteOpen, setIsDeleteOpen] = useState<boolean>(false);
+
+  /* ---- Role change confirmation state ----------------------------------- */
+  const [isRoleChangeOpen, setIsRoleChangeOpen] = useState<boolean>(false);
 
   /* ---- Store assignment state -------------------------------------------- */
   const [isAssignOpen, setIsAssignOpen] = useState<boolean>(false);
@@ -148,6 +153,20 @@ export default function UserDetailPage(): React.ReactElement {
     setIsEditOpen(true);
   }, [user]);
 
+  /** 사용자 수정 저장 (역할 변경 확인 포함) / Save user edits (with role change check) */
+  const handleSaveClick = useCallback((): void => {
+    if (!editForm.full_name.trim()) return;
+    // If role is being changed, show confirmation first
+    if (editForm.role_id && user) {
+      const currentRole = roleList.find((r: Role) => r.name === user.role_name);
+      if (currentRole && editForm.role_id !== currentRole.id) {
+        setIsRoleChangeOpen(true);
+        return;
+      }
+    }
+    handleUpdate();
+  }, [editForm, user, roleList]);
+
   /** 사용자 수정 저장 / Save user edits */
   const handleUpdate = useCallback(async (): Promise<void> => {
     if (!editForm.full_name.trim()) return;
@@ -170,9 +189,10 @@ export default function UserDetailPage(): React.ReactElement {
       await updateUser.mutateAsync(payload);
       toast({ type: "success", message: "Staff member updated successfully!" });
       setIsEditOpen(false);
+      setIsRoleChangeOpen(false);
       setEditForm(INITIAL_EDIT_FORM);
-    } catch {
-      toast({ type: "error", message: "Failed to update staff member." });
+    } catch (err) {
+      toast({ type: "error", message: parseApiError(err, "Failed to update staff member.") });
     }
   }, [userId, editForm, updateUser, toast]);
 
@@ -189,8 +209,8 @@ export default function UserDetailPage(): React.ReactElement {
           ? "Staff member deactivated."
           : "Staff member activated.",
       });
-    } catch {
-      toast({ type: "error", message: "Failed to toggle active status." });
+    } catch (err) {
+      toast({ type: "error", message: parseApiError(err, "Failed to toggle active status.") });
     }
   }, [userId, user, toggleActive, toast]);
 
@@ -200,8 +220,8 @@ export default function UserDetailPage(): React.ReactElement {
       await deleteUser.mutateAsync(userId);
       toast({ type: "success", message: "Staff member deleted successfully!" });
       router.push("/users");
-    } catch {
-      toast({ type: "error", message: "Failed to delete staff member." });
+    } catch (err) {
+      toast({ type: "error", message: parseApiError(err, "Failed to delete staff member.") });
     }
   }, [userId, deleteUser, toast, router]);
 
@@ -216,8 +236,8 @@ export default function UserDetailPage(): React.ReactElement {
       toast({ type: "success", message: "Store assigned successfully!" });
       setIsAssignOpen(false);
       setSelectedStoreId("");
-    } catch {
-      toast({ type: "error", message: "Failed to assign store." });
+    } catch (err) {
+      toast({ type: "error", message: parseApiError(err, "Failed to assign store.") });
     }
   }, [userId, selectedStoreId, addUserStore, toast]);
 
@@ -243,8 +263,8 @@ export default function UserDetailPage(): React.ReactElement {
       setIsRemoveConfirmOpen(false);
       setRemovingStoreId(null);
       setRemovingStoreName("");
-    } catch {
-      toast({ type: "error", message: "Failed to remove store assignment." });
+    } catch (err) {
+      toast({ type: "error", message: parseApiError(err, "Failed to remove store assignment.") });
     }
   }, [userId, removingStoreId, removeUserStore, toast]);
 

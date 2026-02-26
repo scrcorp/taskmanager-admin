@@ -23,6 +23,7 @@ import {
   CheckSquare,
   AlertTriangle,
   FileText,
+  Download,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/authStore";
 import {
@@ -36,8 +37,10 @@ import {
   useOvertimeSummary,
   useEvaluationSummary,
 } from "@/hooks";
-import { Card, Select, Badge, LoadingSpinner } from "@/components/ui";
-import { cn, formatDate } from "@/lib/utils";
+import { Card, Select, Badge, LoadingSpinner, Button } from "@/components/ui";
+import { useToast } from "@/components/ui/Toast";
+import api from "@/lib/api";
+import { cn, formatDate, parseApiError } from "@/lib/utils";
 import type { Announcement, Store } from "@/types";
 
 // ─── Date Range Helpers ──────────────────────────────────
@@ -174,7 +177,11 @@ function StatusRow({
 
 export default function DashboardPage(): React.ReactElement {
   const router = useRouter();
-  const { user } = useAuthStore();
+  useAuthStore();
+  const { toast } = useToast();
+
+  // ─── Export state ──────────────────────────────────
+  const [isExporting, setIsExporting] = useState<boolean>(false);
 
   // ─── Date / Store filters ──────────────────────────
   const [dateRange, setDateRange] = useState<DateRange>("today");
@@ -283,6 +290,28 @@ export default function DashboardPage(): React.ReactElement {
     return items.slice(0, 5);
   }, [announcementsData]);
 
+  // ─── Export handler ─────────────────────────────────
+  const handleExport = useCallback(async (): Promise<void> => {
+    setIsExporting(true);
+    try {
+      const response = await api.get("/admin/dashboard/export", {
+        responseType: "blob",
+      });
+      const today = new Date().toISOString().split("T")[0];
+      const url = window.URL.createObjectURL(response.data);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `dashboard_${today}.xlsx`;
+      link.click();
+      window.URL.revokeObjectURL(url);
+      toast({ type: "success", message: "Dashboard exported." });
+    } catch (err) {
+      toast({ type: "error", message: parseApiError(err, "Failed to export dashboard.") });
+    } finally {
+      setIsExporting(false);
+    }
+  }, [toast]);
+
   // ─── Date range button handler ────────────────────
   const handleDateRange = useCallback((range: DateRange) => {
     setDateRange(range);
@@ -299,11 +328,22 @@ export default function DashboardPage(): React.ReactElement {
   return (
     <div>
       {/* Header */}
-      <div className="mb-8">
-        <h1 className="text-2xl font-extrabold text-text">Dashboard</h1>
-        <p className="text-sm text-text-secondary mt-1">
-          Here is an overview of your organization.
-        </p>
+      <div className="flex items-center justify-between mb-8">
+        <div>
+          <h1 className="text-2xl font-extrabold text-text">Dashboard</h1>
+          <p className="text-sm text-text-secondary mt-1">
+            Here is an overview of your organization.
+          </p>
+        </div>
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={handleExport}
+          isLoading={isExporting}
+        >
+          <Download size={14} className="mr-1" />
+          Export
+        </Button>
       </div>
 
       {/* Stat Cards */}

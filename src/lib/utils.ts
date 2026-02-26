@@ -132,3 +132,50 @@ export function timeAgo(dateStr: string): string {
 
   return formatDate(dateStr);
 }
+
+// ── API Error Parsing ──────────────────────────────────────────
+
+/** Parse API error response into a user-friendly message.
+ *
+ * Handles FastAPI error formats:
+ *   - { detail: "message" } → "message"
+ *   - { detail: [{ loc: [...], msg: "..." }] } → "field: message"
+ *   - Network/timeout errors → friendly fallback
+ *
+ * @param error - caught error (typically AxiosError)
+ * @param fallback - default message if parsing fails
+ * @returns User-readable error string
+ */
+export function parseApiError(error: unknown, fallback: string): string {
+  if (
+    error &&
+    typeof error === "object" &&
+    "response" in error
+  ) {
+    const resp = (error as { response?: { data?: unknown } }).response;
+    const data = resp?.data;
+    if (data && typeof data === "object" && "detail" in (data as Record<string, unknown>)) {
+      const detail = (data as { detail: unknown }).detail;
+      if (typeof detail === "string") return detail;
+      if (Array.isArray(detail) && detail.length > 0) {
+        return detail
+          .map((d: { loc?: string[]; msg?: string }) => {
+            const loc = (d.loc ?? []).filter((l) => l !== "body").join(" > ");
+            const msg = d.msg ?? "";
+            return loc ? `${loc}: ${msg}` : msg;
+          })
+          .join(", ");
+      }
+    }
+  }
+  if (
+    error &&
+    typeof error === "object" &&
+    "code" in error
+  ) {
+    const code = (error as { code?: string }).code;
+    if (code === "ECONNABORTED") return "Server not responding. Please try again.";
+    if (code === "ERR_NETWORK") return "No internet connection.";
+  }
+  return fallback;
+}

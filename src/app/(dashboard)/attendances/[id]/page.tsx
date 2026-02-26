@@ -33,7 +33,7 @@ import {
   LoadingSpinner,
 } from "@/components/ui";
 import { useToast } from "@/components/ui/Toast";
-import { formatDateTime, formatFixedDate, timeAgo } from "@/lib/utils";
+import { formatDateTime, formatFixedDate, timeAgo, parseApiError } from "@/lib/utils";
 
 /** 상태별 배지 색상 매핑 -- Status badge variant mapping */
 const statusBadge: Record<
@@ -108,8 +108,8 @@ export default function AttendanceDetailPage(): React.ReactElement {
           });
           setShowCorrect(false);
         },
-        onError: () =>
-          toast({ type: "error", message: "수정 실패 (Correction failed)" }),
+        onError: (err) =>
+          toast({ type: "error", message: parseApiError(err, "수정 실패 (Correction failed)") }),
       },
     );
   };

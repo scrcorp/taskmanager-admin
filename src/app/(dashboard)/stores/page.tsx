@@ -36,8 +36,9 @@ import { Input } from "@/components/ui/Input";
 import { Table, Badge, Modal, ConfirmDialog } from "@/components/ui";
 import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
 import { useToast } from "@/components/ui/Toast";
-import { formatDate } from "@/lib/utils";
+import { formatDate, parseApiError } from "@/lib/utils";
 import { usePermissions } from "@/hooks/usePermissions";
+import { PERMISSIONS } from "@/lib/permissions";
 import type { Store } from "@/types";
 
 /** 폼 내 드래그 가능한 아이템 / Draggable item in form */
@@ -129,7 +130,8 @@ export default function StoresPage(): React.ReactElement {
   const { toast } = useToast();
 
   /** 권한 훅 / Permission hook */
-  const { canManageStores } = usePermissions();
+  const { hasPermission } = usePermissions();
+  const canWrite = hasPermission(PERMISSIONS.STORES_CREATE);
 
   /** 매장 데이터 훅 / Store data hooks */
   const { data: stores, isLoading } = useStores();
@@ -277,8 +279,8 @@ export default function StoresPage(): React.ReactElement {
       setCreateForm(INITIAL_FORM);
       setNewShiftName("");
       setNewPositionName("");
-    } catch {
-      toast({ type: "error", message: "Failed to create store." });
+    } catch (err) {
+      toast({ type: "error", message: parseApiError(err, "Failed to create store.") });
     } finally {
       setIsCreating(false);
     }
@@ -308,8 +310,8 @@ export default function StoresPage(): React.ReactElement {
       setIsEditOpen(false);
       setEditingStoreId(null);
       setEditForm(INITIAL_FORM);
-    } catch {
-      toast({ type: "error", message: "Failed to update store." });
+    } catch (err) {
+      toast({ type: "error", message: parseApiError(err, "Failed to update store.") });
     }
   }, [editingStoreId, editForm, updateStore, toast]);
 
@@ -333,8 +335,8 @@ export default function StoresPage(): React.ReactElement {
       setIsDeleteOpen(false);
       setDeletingStoreId(null);
       setDeletingStoreName("");
-    } catch {
-      toast({ type: "error", message: "Failed to delete store." });
+    } catch (err) {
+      toast({ type: "error", message: parseApiError(err, "Failed to delete store.") });
     }
   }, [deletingStoreId, deleteStore, toast]);
 
@@ -383,7 +385,7 @@ export default function StoresPage(): React.ReactElement {
           </span>
         ),
       },
-      ...(canManageStores
+      ...(canWrite
         ? [
             {
               key: "actions",
@@ -413,7 +415,7 @@ export default function StoresPage(): React.ReactElement {
           ]
         : []),
     ],
-    [handleOpenEdit, handleOpenDelete, canManageStores],
+    [handleOpenEdit, handleOpenDelete, canWrite],
   );
 
   if (isLoading) {
@@ -429,7 +431,7 @@ export default function StoresPage(): React.ReactElement {
       {/* Page Header */}
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-extrabold text-text">Stores</h1>
-        {canManageStores && (
+        {canWrite && (
           <Button
             variant="primary"
             onClick={() => setIsCreateOpen(true)}

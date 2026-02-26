@@ -39,8 +39,9 @@ import { Textarea } from "@/components/ui/Textarea";
 import { SortableList } from "@/components/ui/SortableList";
 import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
 import { useToast } from "@/components/ui/Toast";
-import { cn } from "@/lib/utils";
+import { cn, parseApiError } from "@/lib/utils";
 import { usePermissions } from "@/hooks/usePermissions";
+import { PERMISSIONS } from "@/lib/permissions";
 import type {
   Store,
   Shift,
@@ -108,7 +109,8 @@ function hasVerificationType(value: string, type: "photo" | "text"): boolean {
 
 export default function ChecklistsPage(): React.ReactElement {
   const { toast } = useToast();
-  const { canManageChecklists } = usePermissions();
+  const { hasPermission } = usePermissions();
+  const canManageChecklists = hasPermission(PERMISSIONS.CHECKLISTS_CREATE);
 
   /* ---- Filter state ---- */
   const [filterStoreId, setFilterStoreId] = useState<string>("");
@@ -280,8 +282,8 @@ export default function ChecklistsPage(): React.ReactElement {
       setCreatePositionId("");
       // 생성 후 아이템 추가 화면으로 자동 전환
       setExpandedTemplateId(created.id);
-    } catch {
-      toast({ type: "error", message: "Failed to create checklist template." });
+    } catch (err) {
+      toast({ type: "error", message: parseApiError(err, "Failed to create checklist template.") });
     }
   }, [createTitle, createStoreId, createShiftId, createPositionId, createTemplate, toast]);
 
@@ -294,8 +296,8 @@ export default function ChecklistsPage(): React.ReactElement {
       });
       setImportResult(result);
       toast({ type: "success", message: `Import complete! ${result.created_templates} templates created.` });
-    } catch {
-      toast({ type: "error", message: "Failed to import Excel file." });
+    } catch (err) {
+      toast({ type: "error", message: parseApiError(err, "Failed to import Excel file.") });
     }
   }, [importFile, duplicateAction, importTemplates, toast]);
 
@@ -303,8 +305,8 @@ export default function ChecklistsPage(): React.ReactElement {
     try {
       await downloadSampleExcel();
       toast({ type: "success", message: "Sample template downloaded!" });
-    } catch {
-      toast({ type: "error", message: "Failed to download sample template." });
+    } catch (err) {
+      toast({ type: "error", message: parseApiError(err, "Failed to download sample template.") });
     }
   }, [toast]);
 
@@ -358,8 +360,8 @@ export default function ChecklistsPage(): React.ReactElement {
       if (expandedTemplateId === deletingTemplateId) {
         setExpandedTemplateId(null);
       }
-    } catch {
-      toast({ type: "error", message: "Failed to delete checklist template." });
+    } catch (err) {
+      toast({ type: "error", message: parseApiError(err, "Failed to delete checklist template.") });
     }
   }, [deletingTemplateId, deleteTemplate, expandedTemplateId, toast]);
 
@@ -448,8 +450,8 @@ export default function ChecklistsPage(): React.ReactElement {
       toast({ type: "success", message: `${parsedItems.length} items added!` });
       setIsBulkOpen(false);
       setBulkText("");
-    } catch {
-      toast({ type: "error", message: "Failed to add items." });
+    } catch (err) {
+      toast({ type: "error", message: parseApiError(err, "Failed to add items.") });
     } finally {
       setIsBulkAdding(false);
     }
@@ -476,8 +478,8 @@ export default function ChecklistsPage(): React.ReactElement {
       toast({ type: "success", message: "Checklist item created!" });
       setIsItemCreateOpen(false);
       setItemCreateForm(INITIAL_ITEM_FORM);
-    } catch {
-      toast({ type: "error", message: "Failed to create checklist item." });
+    } catch (err) {
+      toast({ type: "error", message: parseApiError(err, "Failed to create checklist item.") });
     }
   }, [expandedTemplateId, itemCreateForm, createItem, toast, sortedItems]);
 
@@ -513,8 +515,8 @@ export default function ChecklistsPage(): React.ReactElement {
       setIsItemEditOpen(false);
       setEditingItemId(null);
       setItemEditForm(INITIAL_ITEM_FORM);
-    } catch {
-      toast({ type: "error", message: "Failed to update checklist item." });
+    } catch (err) {
+      toast({ type: "error", message: parseApiError(err, "Failed to update checklist item.") });
     }
   }, [editingItemId, itemEditForm, updateItem, expandedTemplateId, toast]);
 
@@ -536,8 +538,8 @@ export default function ChecklistsPage(): React.ReactElement {
       setIsItemDeleteOpen(false);
       setDeletingItemId(null);
       setDeletingItemTitle("");
-    } catch {
-      toast({ type: "error", message: "Failed to delete checklist item." });
+    } catch (err) {
+      toast({ type: "error", message: parseApiError(err, "Failed to delete checklist item.") });
     }
   }, [deletingItemId, deleteItem, expandedTemplateId, toast]);
 

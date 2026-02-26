@@ -14,10 +14,12 @@ import { useStores } from "@/hooks/useStores";
 import { useUsers } from "@/hooks/useUsers";
 import { useShifts } from "@/hooks/useShifts";
 import { usePositions } from "@/hooks/usePositions";
+import { useShiftPresets } from "@/hooks/useShiftPresets";
 import { useCreateSchedule } from "@/hooks/useSchedules";
 import { Button, Card } from "@/components/ui";
 import { useToast } from "@/components/ui/Toast";
-import type { Store, User, Shift, Position } from "@/types";
+import { parseApiError } from "@/lib/utils";
+import type { Store, User, Shift, Position, ShiftPreset } from "@/types";
 
 export default function NewSchedulePage(): React.ReactElement {
   return (
@@ -52,6 +54,7 @@ function NewScheduleContent(): React.ReactElement {
   const { data: users } = useUsers();
   const { data: shifts } = useShifts(storeId || undefined);
   const { data: positions } = usePositions(storeId || undefined);
+  const { data: shiftPresets } = useShiftPresets(storeId || "");
 
   const activeStores: Store[] = useMemo(
     () => (stores ?? []).filter((s: Store) => s.is_active),
@@ -79,6 +82,28 @@ function NewScheduleContent(): React.ReactElement {
     [positions],
   );
 
+  // Filter presets by selected shift (if any)
+  const filteredPresets: ShiftPreset[] = useMemo(() => {
+    const all = (shiftPresets ?? []).filter((p: ShiftPreset) => p.is_active);
+    if (!shiftId) return all;
+    return all.filter((p: ShiftPreset) => p.shift_id === shiftId);
+  }, [shiftPresets, shiftId]);
+
+  /** 프리셋 선택 시 시작/종료 시간 자동 입력 — Auto-fill times from preset */
+  const handlePresetSelect = useCallback(
+    (presetId: string): void => {
+      const preset = filteredPresets.find((p: ShiftPreset) => p.id === presetId);
+      if (preset) {
+        setStartTime(preset.start_time);
+        setEndTime(preset.end_time);
+        if (!shiftId && preset.shift_id) {
+          setShiftId(preset.shift_id);
+        }
+      }
+    },
+    [filteredPresets, shiftId],
+  );
+
   const canSubmit: boolean = !!storeId && !!userId && !!workDate;
 
   const handleSubmit = useCallback(
@@ -99,8 +124,8 @@ function NewScheduleContent(): React.ReactElement {
         });
         toast({ type: "success", message: "Schedule created!" });
         router.push(`/schedules/manage/${schedule.id}`);
-      } catch {
-        toast({ type: "error", message: "Failed to create schedule." });
+      } catch (err) {
+        toast({ type: "error", message: parseApiError(err, "Failed to create schedule.") });
       }
     },
     [
@@ -274,6 +299,33 @@ function NewScheduleContent(): React.ReactElement {
               </select>
             </div>
           </div>
+
+          {/* 시프트 프리셋 (Shift Preset — optional, auto-fills time) */}
+          {storeId && filteredPresets.length > 0 && (
+            <div>
+              <label
+                htmlFor="preset"
+                className="block text-sm font-medium text-text mb-1.5"
+              >
+                Shift Preset
+              </label>
+              <select
+                id="preset"
+                onChange={(e: React.ChangeEvent<HTMLSelectElement>) =>
+                  handlePresetSelect(e.target.value)
+                }
+                className="w-full px-3 py-2 text-sm bg-surface border border-border rounded-lg text-text focus:outline-none focus:ring-1 focus:ring-accent"
+                defaultValue=""
+              >
+                <option value="">Select a preset to auto-fill times...</option>
+                {filteredPresets.map((preset: ShiftPreset) => (
+                  <option key={preset.id} value={preset.id}>
+                    {preset.name} ({preset.start_time} - {preset.end_time})
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
 
           {/* 시간 (Time range — optional) */}
           <div className="grid grid-cols-2 gap-4">

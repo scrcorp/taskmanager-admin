@@ -32,10 +32,11 @@ import {
 } from "@/hooks/useSchedules";
 import { useUsers } from "@/hooks/useUsers";
 import { usePermissions } from "@/hooks/usePermissions";
+import { PERMISSIONS } from "@/lib/permissions";
 import { Button, Card, Badge, Modal, Select } from "@/components/ui";
 import { ConfirmDialog } from "@/components/ui";
 import { useToast } from "@/components/ui/Toast";
-import { formatFixedDate, formatDateTime } from "@/lib/utils";
+import { formatFixedDate, formatDateTime, parseApiError } from "@/lib/utils";
 
 /** 상태별 배지 색상 매핑 — Status badge variant mapping */
 const statusBadge: Record<
@@ -53,7 +54,7 @@ export default function ScheduleDetailPage(): React.ReactElement {
   const params = useParams();
   const id: string = params.id as string;
   const { toast } = useToast();
-  const { roleLevel } = usePermissions();
+  const { hasPermission } = usePermissions();
 
   const { data: schedule, isLoading } = useSchedule(id);
   const submitSchedule = useSubmitSchedule();
@@ -71,15 +72,15 @@ export default function ScheduleDetailPage(): React.ReactElement {
   const [showSubstituteModal, setShowSubstituteModal] = useState(false);
   const [selectedUserId, setSelectedUserId] = useState<string>("");
 
-  // GM 이상 여부 (level <= 20) — Whether user is GM or above
-  const isGmPlus: boolean = roleLevel <= 20;
+  // GM 이상 여부 — Whether user can update schedules (approve/substitute)
+  const isGmPlus: boolean = hasPermission(PERMISSIONS.SCHEDULES_UPDATE);
 
   const handleSubmit = useCallback(async (): Promise<void> => {
     try {
       await submitSchedule.mutateAsync(id);
       toast({ type: "success", message: "Schedule submitted for approval!" });
-    } catch {
-      toast({ type: "error", message: "Failed to submit schedule." });
+    } catch (err) {
+      toast({ type: "error", message: parseApiError(err, "Failed to submit schedule.") });
     }
   }, [id, submitSchedule, toast]);
 
@@ -90,8 +91,8 @@ export default function ScheduleDetailPage(): React.ReactElement {
         type: "success",
         message: "Schedule approved! Work assignment created.",
       });
-    } catch {
-      toast({ type: "error", message: "Failed to approve schedule." });
+    } catch (err) {
+      toast({ type: "error", message: parseApiError(err, "Failed to approve schedule.") });
     }
   }, [id, approveSchedule, toast]);
 
@@ -100,8 +101,8 @@ export default function ScheduleDetailPage(): React.ReactElement {
       await cancelSchedule.mutateAsync(id);
       toast({ type: "success", message: "Schedule cancelled." });
       setShowCancelConfirm(false);
-    } catch {
-      toast({ type: "error", message: "Failed to cancel schedule." });
+    } catch (err) {
+      toast({ type: "error", message: parseApiError(err, "Failed to cancel schedule.") });
     }
   }, [id, cancelSchedule, toast]);
 
@@ -115,8 +116,8 @@ export default function ScheduleDetailPage(): React.ReactElement {
       toast({ type: "success", message: "Substitute assigned successfully!" });
       setShowSubstituteModal(false);
       setSelectedUserId("");
-    } catch {
-      toast({ type: "error", message: "Failed to assign substitute." });
+    } catch (err) {
+      toast({ type: "error", message: parseApiError(err, "Failed to assign substitute.") });
     }
   }, [id, selectedUserId, substituteSchedule, toast]);
 
