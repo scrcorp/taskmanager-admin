@@ -1,7 +1,8 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect, Suspense } from "react";
 import { FileSearch, ChevronUp, ChevronDown } from "lucide-react";
+import { useSearchParams } from "next/navigation";
 import { useCompletionLog } from "@/hooks/useCompletionLog";
 import type { CompletionLogEntry } from "@/hooks/useCompletionLog";
 import { usePermissions } from "@/hooks/usePermissions";
@@ -35,15 +36,28 @@ function SortArrows({ active, dir }: { active: boolean; dir: SortDir }) {
   );
 }
 
-export default function CompletionLogPage(): React.ReactElement {
+function CompletionLogContent(): React.ReactElement {
   const { hasPermission } = usePermissions();
+  const searchParams = useSearchParams();
+
   const [page, setPage] = useState<number>(1);
-  const [dateFrom, setDateFrom] = useState<string>("");
-  const [dateTo, setDateTo] = useState<string>("");
+  const [dateFrom, setDateFrom] = useState<string>(
+    () => searchParams.get("from") ?? "",
+  );
+  const [dateTo, setDateTo] = useState<string>(
+    () => searchParams.get("to") ?? "",
+  );
   const [storeId, setStoreId] = useState<string>("");
   const [userId, setUserId] = useState<string>("");
   const [sort, setSort] = useState<SortState>({ key: "", dir: null });
   const perPage: number = 20;
+
+  // Sync when query params change
+  useEffect(() => {
+    setDateFrom(searchParams.get("from") ?? "");
+    setDateTo(searchParams.get("to") ?? "");
+    setPage(1);
+  }, [searchParams]);
 
   const { data: stores } = useStores();
   const { data: users } = useUsers();
@@ -321,5 +335,13 @@ export default function CompletionLogPage(): React.ReactElement {
         </div>
       )}
     </div>
+  );
+}
+
+export default function CompletionLogPage(): React.ReactElement {
+  return (
+    <Suspense>
+      <CompletionLogContent />
+    </Suspense>
   );
 }

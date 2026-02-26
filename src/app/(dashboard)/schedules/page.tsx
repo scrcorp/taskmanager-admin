@@ -1375,7 +1375,7 @@ function MonthView({
 export default function SchedulesPage(): React.ReactElement {
   const router = useRouter();
 
-  const [viewMode, setViewMode] = useState<ViewMode>("day");
+  const [viewMode, setViewMode] = useState<ViewMode>("week");
   const [selectedDate, setSelectedDate] = useState<string>(
     () => new Date().toISOString().split("T")[0],
   );
@@ -1446,6 +1446,15 @@ export default function SchedulesPage(): React.ReactElement {
     return activeStores.filter((s) => s.id === selectedStoreId);
   }, [activeStores, selectedStoreId]);
 
+  // Date range for the current view (used when navigating to List/Logs)
+  const currentDateRange: { from: string; to: string } = useMemo(() => {
+    if (viewMode === "day") return { from: selectedDate, to: selectedDate };
+    if (viewMode === "week") return { from: weekDays[0], to: weekDays[6] };
+    // month: use the visible calendar grid range
+    const weeks = getMonthCalendar(selectedDate);
+    return { from: weeks[0][0], to: weeks[5][6] };
+  }, [viewMode, selectedDate, weekDays]);
+
   return (
     <div>
       {/* Header */}
@@ -1479,7 +1488,11 @@ export default function SchedulesPage(): React.ReactElement {
           <Button
             variant="secondary"
             size="md"
-            onClick={() => router.push("/schedules/list")}
+            onClick={() =>
+              router.push(
+                `/schedules/list?from=${currentDateRange.from}&to=${currentDateRange.to}`,
+              )
+            }
           >
             <List size={16} />
             List

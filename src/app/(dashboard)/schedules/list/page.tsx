@@ -4,12 +4,13 @@
  * 배정 목록 페이지 -- 작업 배정을 테이블 형태로 관리합니다.
  *
  * Assignments list page with filtering, table view, pagination, and create modal.
- * Supports filtering by store, user, date, and status.
+ * Supports filtering by store, user, date range, and status.
+ * Reads ?from=&to= query params for auto-fill from schedules page.
  */
 
-import React, { useState, useCallback } from "react";
-import { useRouter } from "next/navigation";
-import { Plus, ArrowLeft, AlertTriangle } from "lucide-react";
+import React, { useState, useCallback, useEffect, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Plus, ArrowLeft, AlertTriangle, FileSearch } from "lucide-react";
 import {
   useAssignments,
   useCreateAssignment,
@@ -18,7 +19,7 @@ import { useStores } from "@/hooks/useStores";
 import { useUsers } from "@/hooks/useUsers";
 import { useShifts } from "@/hooks/useShifts";
 import { usePositions } from "@/hooks/usePositions";
-import { Button, Input, Select, Card, Table, Modal, Badge, Pagination, LoadingSpinner } from "@/components/ui";
+import { Button, Input, Select, Card, Table, Modal, Badge, Pagination } from "@/components/ui";
 import { useChecklistTemplates } from "@/hooks/useChecklists";
 import { useOvertimeAlerts } from "@/hooks/useOvertimeAlerts";
 import type { OvertimeAlert } from "@/hooks/useOvertimeAlerts";
@@ -42,16 +43,31 @@ const statusLabel: Record<string, string> = {
 
 const PER_PAGE: number = 20;
 
-export default function AssignmentsListPage(): React.ReactElement {
+function AssignmentsListContent(): React.ReactElement {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { toast } = useToast();
 
-  // -- Filter state --
+  // -- Filter state (initialised from query params) --
   const [filterStoreId, setFilterStoreId] = useState<string>("");
   const [filterUserId, setFilterUserId] = useState<string>("");
-  const [filterDate, setFilterDate] = useState<string>("");
+  const [filterDateFrom, setFilterDateFrom] = useState<string>(
+    () => searchParams.get("from") ?? "",
+  );
+  const [filterDateTo, setFilterDateTo] = useState<string>(
+    () => searchParams.get("to") ?? "",
+  );
   const [filterStatus, setFilterStatus] = useState<string>("");
   const [page, setPage] = useState<number>(1);
+
+  // Sync when query params change (e.g. browser back/forward)
+  useEffect(() => {
+    const from = searchParams.get("from") ?? "";
+    const to = searchParams.get("to") ?? "";
+    setFilterDateFrom(from);
+    setFilterDateTo(to);
+    setPage(1);
+  }, [searchParams]);
 
   // -- Modal state --
   const [isCreateOpen, setIsCreateOpen] = useState<boolean>(false);
@@ -65,7 +81,8 @@ export default function AssignmentsListPage(): React.ReactElement {
   const { data: assignmentsData, isLoading } = useAssignments({
     store_id: filterStoreId || undefined,
     user_id: filterUserId || undefined,
-    work_date: filterDate || undefined,
+    date_from: filterDateFrom || undefined,
+    date_to: filterDateTo || undefined,
     status: (filterStatus || undefined) as "assigned" | "in_progress" | "completed" | undefined,
     page,
     per_page: PER_PAGE,
@@ -83,7 +100,6 @@ export default function AssignmentsListPage(): React.ReactElement {
   );
 
   // 선택된 조합에 체크리스트 템플릿이 존재하는지 확인
-  // Check if a checklist template exists for the selected combo
   const comboSelected: boolean = !!(formStoreId && formShiftId && formPositionId);
   const { data: matchingTemplates, isLoading: isCheckingTemplate } = useChecklistTemplates(
     formStoreId || undefined,
@@ -136,22 +152,10 @@ export default function AssignmentsListPage(): React.ReactElement {
     render?: (item: Assignment) => React.ReactNode;
     className?: string;
   }[] = [
-    {
-      key: "user_name",
-      header: "Worker",
-    },
-    {
-      key: "store_name",
-      header: "Store",
-    },
-    {
-      key: "shift_name",
-      header: "Shift",
-    },
-    {
-      key: "position_name",
-      header: "Position",
-    },
+    { key: "user_name", header: "Worker" },
+    { key: "store_name", header: "Store" },
+    { key: "shift_name", header: "Shift" },
+    { key: "position_name", header: "Position" },
     {
       key: "work_date",
       header: "Date",
@@ -242,6 +246,15 @@ export default function AssignmentsListPage(): React.ReactElement {
     );
   }, [formStoreId, formShiftId, formPositionId, formUserId, formDate, createAssignment, toast]);
 
+  /** Logs 버튼 — 현재 날짜 필터를 completion-log에 전달 */
+  const handleLogsClick = useCallback((): void => {
+    const params = new URLSearchParams();
+    if (filterDateFrom) params.set("from", filterDateFrom);
+    if (filterDateTo) params.set("to", filterDateTo);
+    const query = params.toString();
+    router.push(`/completion-log${query ? `?${query}` : ""}`);
+  }, [router, filterDateFrom, filterDateTo]);
+
   return (
     <div>
       {/* Header */}
@@ -254,6 +267,10 @@ export default function AssignmentsListPage(): React.ReactElement {
           <ArrowLeft size={20} />
         </button>
         <h1 className="text-2xl font-extrabold text-text flex-1">Schedules</h1>
+        <Button variant="ghost" size="md" onClick={handleLogsClick}>
+          <FileSearch size={16} />
+          Logs
+        </Button>
         <Button variant="primary" size="md" onClick={handleOpenCreate}>
           <Plus size={16} />
           Assign Work
@@ -285,13 +302,24 @@ export default function AssignmentsListPage(): React.ReactElement {
               }}
             />
           </div>
-          <div className="w-44">
+          <div className="w-40">
             <Input
-              label="Date"
+              label="From"
               type="date"
-              value={filterDate}
+              value={filterDateFrom}
               onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
-                setFilterDate(e.target.value);
+                setFilterDateFrom(e.target.value);
+                setPage(1);
+              }}
+            />
+          </div>
+          <div className="w-40">
+            <Input
+              label="To"
+              type="date"
+              value={filterDateTo}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+                setFilterDateTo(e.target.value);
                 setPage(1);
               }}
             />
@@ -315,12 +343,8 @@ export default function AssignmentsListPage(): React.ReactElement {
         <Card className="mb-6" padding="p-4">
           <div className="flex items-center gap-2 mb-3">
             <AlertTriangle size={16} className="text-danger" />
-            <h3 className="text-sm font-bold text-text">
-              Overtime Alerts
-            </h3>
-            <Badge variant="danger">
-              {activeAlerts.length}
-            </Badge>
+            <h3 className="text-sm font-bold text-text">Overtime Alerts</h3>
+            <Badge variant="danger">{activeAlerts.length}</Badge>
           </div>
           <div className="space-y-2">
             {activeAlerts.map((alert: OvertimeAlert) => (
@@ -394,7 +418,6 @@ export default function AssignmentsListPage(): React.ReactElement {
               setFormPositionId(e.target.value)
             }
           />
-          {/* 템플릿 미존재 경고 — No template warning */}
           {comboSelected && !isCheckingTemplate && !hasTemplate && (
             <div className="flex items-start gap-2 rounded-lg border border-yellow-300 bg-yellow-50 p-3 text-sm text-yellow-800">
               <AlertTriangle size={16} className="mt-0.5 shrink-0" />
@@ -441,5 +464,13 @@ export default function AssignmentsListPage(): React.ReactElement {
         </div>
       </Modal>
     </div>
+  );
+}
+
+export default function AssignmentsListPage(): React.ReactElement {
+  return (
+    <Suspense>
+      <AssignmentsListContent />
+    </Suspense>
   );
 }
