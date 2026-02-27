@@ -973,8 +973,8 @@ export default function StoreDetailPage(): React.ReactElement {
       <div className="bg-card border border-border rounded-xl p-6 mb-6">
         <div className="flex items-start justify-between">
           <div>
-            <div className="flex items-center gap-3 mb-2">
-              <h1 className="text-2xl font-extrabold text-text">
+            <div className="flex items-center gap-3 mb-2 flex-wrap">
+              <h1 className="text-xl md:text-2xl font-extrabold text-text">
                 {store.name}
               </h1>
               <Badge variant={store.is_active ? "success" : "danger"}>
@@ -989,7 +989,7 @@ export default function StoreDetailPage(): React.ReactElement {
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 mb-6 border-b border-border">
+      <div className="flex gap-1 mb-6 border-b border-border overflow-x-auto">
         {TAB_OPTIONS.map((tab: { value: TabName; label: string }) => (
           <button
             key={tab.value}

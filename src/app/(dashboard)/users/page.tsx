@@ -48,6 +48,7 @@ interface Column<T> {
   header: string;
   render?: (item: T) => React.ReactNode;
   className?: string;
+  hideOnMobile?: boolean;
 }
 
 /** 초기 폼 상태 / Initial form state */
@@ -200,6 +201,7 @@ export default function UsersPage(): React.ReactElement {
       {
         key: "email",
         header: "Email",
+        hideOnMobile: true,
         render: (user: User) => (
           <span className="text-text-secondary text-sm">
             {user.email || "-"}
@@ -218,6 +220,7 @@ export default function UsersPage(): React.ReactElement {
       {
         key: "created_at",
         header: "Created",
+        hideOnMobile: true,
         render: (user: User) => (
           <span className="text-text-muted text-xs">
             {formatDate(user.created_at)}
@@ -261,9 +264,9 @@ export default function UsersPage(): React.ReactElement {
       </div>
 
       {/* Filter Bar */}
-      <div className="flex flex-wrap items-end gap-3 mb-4">
+      <div className="flex flex-col md:flex-row flex-wrap md:items-end gap-3 mb-4">
         {/* Search */}
-        <div className="w-64">
+        <div className="w-full md:w-64">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-text-muted" />
             <input
@@ -282,7 +285,7 @@ export default function UsersPage(): React.ReactElement {
         </div>
 
         {/* Role Filter */}
-        <div className="w-44">
+        <div className="w-full md:w-44">
           <Select
             label="Role"
             options={[
@@ -303,7 +306,7 @@ export default function UsersPage(): React.ReactElement {
         </div>
 
         {/* Active Status Filter */}
-        <div className="w-40">
+        <div className="w-full md:w-40">
           <Select
             label="Status"
             options={[

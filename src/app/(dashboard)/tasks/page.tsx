@@ -286,8 +286,8 @@ export default function TasksPage(): React.ReactElement {
 
       {/* Filter bar */}
       <Card className="mb-6" padding="p-4">
-        <div className="flex items-end gap-3 flex-wrap">
-          <div className="w-44">
+        <div className="flex flex-col md:flex-row md:items-end gap-3 flex-wrap">
+          <div className="w-full md:w-44">
             <Select
               label="Store"
               options={storeFilterOptions}
@@ -298,7 +298,7 @@ export default function TasksPage(): React.ReactElement {
               }}
             />
           </div>
-          <div className="w-44">
+          <div className="w-full md:w-44">
             <Select
               label="Status"
               options={statusOptions}
@@ -309,7 +309,7 @@ export default function TasksPage(): React.ReactElement {
               }}
             />
           </div>
-          <div className="w-44">
+          <div className="w-full md:w-44">
             <Select
               label="Priority"
               options={priorityFilterOptions}

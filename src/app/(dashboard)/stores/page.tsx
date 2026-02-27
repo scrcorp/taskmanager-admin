@@ -61,6 +61,7 @@ interface Column<T> {
   header: string;
   render?: (item: T) => React.ReactNode;
   className?: string;
+  hideOnMobile?: boolean;
 }
 
 /** 초기 폼 상태 / Initial form state */
@@ -379,6 +380,7 @@ export default function StoresPage(): React.ReactElement {
       {
         key: "created_at",
         header: "Created",
+        hideOnMobile: true,
         render: (store: Store) => (
           <span className="text-text-muted text-xs">
             {formatDate(store.created_at)}

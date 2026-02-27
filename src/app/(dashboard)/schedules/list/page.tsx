@@ -91,11 +91,12 @@ function AssignmentsListContent(): React.ReactElement {
     header: string;
     render?: (item: Assignment) => React.ReactNode;
     className?: string;
+    hideOnMobile?: boolean;
   }[] = [
     { key: "user_name", header: "Worker" },
     { key: "store_name", header: "Store" },
-    { key: "shift_name", header: "Shift" },
-    { key: "position_name", header: "Position" },
+    { key: "shift_name", header: "Shift", hideOnMobile: true },
+    { key: "position_name", header: "Position", hideOnMobile: true },
     {
       key: "work_date",
       header: "Date",
@@ -170,8 +171,8 @@ function AssignmentsListContent(): React.ReactElement {
 
       {/* Filter bar */}
       <Card className="mb-6" padding="p-4">
-        <div className="flex items-end gap-3 flex-wrap">
-          <div className="w-44">
+        <div className="flex flex-col md:flex-row md:items-end gap-3 flex-wrap">
+          <div className="w-full md:w-44">
             <Select
               label="Store"
               options={storeOptions}
@@ -182,7 +183,7 @@ function AssignmentsListContent(): React.ReactElement {
               }}
             />
           </div>
-          <div className="w-44">
+          <div className="w-full md:w-44">
             <Select
               label="Worker"
               options={userOptions}
@@ -193,29 +194,31 @@ function AssignmentsListContent(): React.ReactElement {
               }}
             />
           </div>
-          <div className="w-40">
-            <Input
-              label="From"
-              type="date"
-              value={filterDateFrom}
-              onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
-                setFilterDateFrom(e.target.value);
-                setPage(1);
-              }}
-            />
+          <div className="grid grid-cols-2 gap-3 md:contents">
+            <div className="w-full md:w-40">
+              <Input
+                label="From"
+                type="date"
+                value={filterDateFrom}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+                  setFilterDateFrom(e.target.value);
+                  setPage(1);
+                }}
+              />
+            </div>
+            <div className="w-full md:w-40">
+              <Input
+                label="To"
+                type="date"
+                value={filterDateTo}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+                  setFilterDateTo(e.target.value);
+                  setPage(1);
+                }}
+              />
+            </div>
           </div>
-          <div className="w-40">
-            <Input
-              label="To"
-              type="date"
-              value={filterDateTo}
-              onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
-                setFilterDateTo(e.target.value);
-                setPage(1);
-              }}
-            />
-          </div>
-          <div className="w-44">
+          <div className="w-full md:w-44">
             <Select
               label="Status"
               options={statusOptions}

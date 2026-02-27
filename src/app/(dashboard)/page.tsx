@@ -328,10 +328,10 @@ export default function DashboardPage(): React.ReactElement {
   return (
     <div>
       {/* Header */}
-      <div className="flex items-center justify-between mb-8">
+      <div className="flex items-center justify-between gap-4 mb-6 md:mb-8">
         <div>
-          <h1 className="text-2xl font-extrabold text-text">Dashboard</h1>
-          <p className="text-sm text-text-secondary mt-1">
+          <h1 className="text-xl md:text-2xl font-extrabold text-text">Dashboard</h1>
+          <p className="text-sm text-text-secondary mt-1 hidden md:block">
             Here is an overview of your organization.
           </p>
         </div>
@@ -377,7 +377,7 @@ export default function DashboardPage(): React.ReactElement {
       </div>
 
       {/* ─── Filters ─────────────────────────────────── */}
-      <div className="flex flex-wrap items-center gap-4 mb-6">
+      <div className="flex flex-col md:flex-row flex-wrap md:items-center gap-3 md:gap-4 mb-6">
         {/* Date range buttons */}
         <div className="flex items-center gap-1 bg-surface rounded-lg p-1">
           {([
@@ -402,7 +402,7 @@ export default function DashboardPage(): React.ReactElement {
         </div>
 
         {/* Store filter */}
-        <div className="w-48">
+        <div className="w-full md:w-48">
           <Select
             options={storeOptions}
             value={selectedStoreId}

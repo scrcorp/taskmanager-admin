@@ -110,7 +110,7 @@ function AttendancesContent(): React.ReactElement {
       </div>
 
       {/* 필터 바 (Filter bar) */}
-      <div className="flex items-center gap-3 mb-4">
+      <div className="flex flex-col md:flex-row md:items-center gap-3 mb-4">
         {/* 매장 필터 (Store filter) */}
         <select
           value={selectedStoreId}
@@ -154,7 +154,7 @@ function AttendancesContent(): React.ReactElement {
       </div>
 
       {/* 상태 탭 (Status tabs) */}
-      <div className="flex items-center gap-1 mb-4 p-1 bg-surface rounded-lg border border-border w-fit">
+      <div className="flex items-center gap-1 mb-4 p-1 bg-surface rounded-lg border border-border w-full md:w-fit overflow-x-auto">
         {statusTabs.map((tab) => (
           <button
             key={tab.key}
@@ -205,10 +205,10 @@ function AttendancesContent(): React.ReactElement {
                 className="cursor-pointer hover:border-accent/50 transition-colors"
                 onClick={() => router.push(`/attendances/${attendance.id}`)}
               >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-4 flex-1 min-w-0">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-2">
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1 flex-1 min-w-0">
                     {/* 사용자 이름 (User name) */}
-                    <div className="flex items-center gap-2 min-w-[140px]">
+                    <div className="flex items-center gap-2">
                       <User size={14} className="text-text-muted shrink-0" />
                       <span className="text-sm font-semibold text-text truncate">
                         {attendance.user_name || "Unknown"}
@@ -216,7 +216,7 @@ function AttendancesContent(): React.ReactElement {
                     </div>
 
                     {/* 매장 (Store) */}
-                    <div className="flex items-center gap-1.5 min-w-[120px]">
+                    <div className="flex items-center gap-1.5">
                       <MapPin size={12} className="text-text-muted shrink-0" />
                       <span className="text-xs text-text-secondary truncate">
                         {attendance.store_name || "Unknown"}
@@ -224,7 +224,7 @@ function AttendancesContent(): React.ReactElement {
                     </div>
 
                     {/* 날짜 (Date) */}
-                    <div className="flex items-center gap-1.5 min-w-[110px]">
+                    <div className="flex items-center gap-1.5">
                       <Calendar
                         size={12}
                         className="text-text-muted shrink-0"

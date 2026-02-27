@@ -257,29 +257,31 @@ function ScheduleManageContent(): React.ReactElement {
   return (
     <div>
       {/* 헤더 (Header) */}
-      <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center gap-3">
+      <div className="flex items-center justify-between gap-2 mb-4">
+        <div className="flex items-center gap-3 min-w-0">
           <button
             type="button"
             onClick={() => router.push("/schedules")}
-            className="p-2 rounded-lg text-text-muted hover:text-text hover:bg-surface-hover transition-colors"
+            className="p-2 rounded-lg text-text-muted hover:text-text hover:bg-surface-hover transition-colors shrink-0"
           >
             <ArrowLeft size={20} />
           </button>
-          <div>
-            <h1 className="text-2xl font-extrabold text-text">Manage Schedules</h1>
-            <p className="text-sm text-text-muted mt-0.5">
+          <div className="min-w-0">
+            <h1 className="text-xl md:text-2xl font-extrabold text-text">Manage Schedules</h1>
+            <p className="text-sm text-text-muted mt-0.5 hidden md:block">
               Manage work schedule drafts and approvals
             </p>
           </div>
         </div>
         <Button
           variant="primary"
-          size="md"
+          size="sm"
+          className="shrink-0"
           onClick={() => router.push("/schedules/manage/new")}
         >
           <Plus size={16} />
-          New Schedule
+          <span className="hidden md:inline">New Schedule</span>
+          <span className="md:hidden">New</span>
         </Button>
       </div>
 
@@ -315,7 +317,7 @@ function ScheduleManageContent(): React.ReactElement {
       </div>
 
       {/* 상태 탭 + 주 이동 (Status tabs + week nav) */}
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 mb-6">
         {/* Status tabs */}
         <div className="flex items-center gap-1 p-1 bg-surface rounded-lg border border-border">
           {statusTabs.map((tab) => (
@@ -378,7 +380,7 @@ function ScheduleManageContent(): React.ReactElement {
       )}
 
       {/* Legend */}
-      <div className="flex items-center gap-4 mt-4 px-2">
+      <div className="flex flex-wrap items-center gap-3 md:gap-4 mt-4 px-2">
         {Object.entries(statusBadgeFull).map(([key, cfg]) => (
           <div key={key} className="flex items-center gap-1.5">
             <Badge variant={cfg.variant}>
