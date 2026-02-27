@@ -471,6 +471,19 @@ export interface ChecklistInstanceSnapshotItem {
   title: string;
   description: string | null;
   verification_type: "none" | "photo" | "text" | "both";
+  is_completed?: boolean;
+  completed_at?: string | null;
+  completed_by?: string | null;
+  review?: {
+    id: string;
+    reviewer_id: string;
+    reviewer_name: string | null;
+    result: "pass" | "fail" | "caution";
+    comment: string | null;
+    photo_url: string | null;
+    created_at: string;
+    updated_at: string;
+  } | null;
 }
 
 export interface ChecklistCompletion {
@@ -486,15 +499,19 @@ export interface ChecklistCompletion {
   location: { lat: number; lng: number } | null;
 }
 
-/** 체크리스트 인스턴스 코멘트 응답 타입.
- * Checklist instance comment response type. */
-export interface ChecklistInstanceComment {
+/** 체크리스트 아이템 리뷰 응답 타입.
+ * Checklist item review response type. */
+export interface ChecklistItemReview {
   id: string;
   instance_id: string;
-  user_id: string;
-  user_name: string | null;
-  text: string;
+  item_index: number;
+  reviewer_id: string;
+  reviewer_name: string | null;
+  result: "pass" | "fail" | "caution";
+  comment: string | null;
+  photo_url: string | null;
   created_at: string;
+  updated_at: string;
 }
 
 /** 체크리스트 인스턴스 목록 필터 파라미터 타입.
@@ -625,6 +642,8 @@ export interface AttendanceFilters {
   store_id?: string;
   user_id?: string;
   work_date?: string;
+  date_from?: string;
+  date_to?: string;
   status?: string;
   page?: number;
   per_page?: number;

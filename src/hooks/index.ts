@@ -86,8 +86,9 @@ export { usePermissions } from "./usePermissions";
 export {
   useChecklistInstances,
   useChecklistInstance,
-  useChecklistComments,
-  useCreateChecklistComment,
+  useUpsertItemReview,
+  useDeleteItemReview,
+  usePresignedUrl,
 } from "./useChecklistInstances";
 
 export {
