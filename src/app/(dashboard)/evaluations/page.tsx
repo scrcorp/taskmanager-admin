@@ -105,7 +105,7 @@ export default function EvaluationsPage(): React.ReactElement {
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-extrabold text-text">Evaluations</h1>
+        <h1 className="text-xl md:text-2xl font-extrabold text-text">Evaluations</h1>
         {isGMOrAbove && activeTab === "templates" && (
           <Button onClick={() => setIsTemplateFormOpen(true)}>
             <Plus className="h-4 w-4 mr-1" />
@@ -150,7 +150,7 @@ export default function EvaluationsPage(): React.ReactElement {
               { key: "target_role", header: "Target Role" },
               { key: "eval_type", header: "Type" },
               { key: "item_count", header: "Items" },
-              { key: "created_at", header: "Created" },
+              { key: "created_at", header: "Created", hideOnMobile: true },
               ...(isGMOrAbove ? [{ key: "actions" as const, header: "" }] : []),
             ]}
             data={templates.map((t) => ({
@@ -195,7 +195,7 @@ export default function EvaluationsPage(): React.ReactElement {
               { key: "evaluator_name", header: "Evaluator" },
               { key: "template_name", header: "Template" },
               { key: "status", header: "Status" },
-              { key: "created_at", header: "Created" },
+              { key: "created_at", header: "Created", hideOnMobile: true },
               { key: "actions", header: "" },
             ]}
             data={evaluations.map((e) => ({

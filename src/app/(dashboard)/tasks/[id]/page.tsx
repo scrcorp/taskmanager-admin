@@ -140,20 +140,22 @@ export default function TaskDetailPage() {
   return (
     <div>
       {/* ── 헤더 (Header) ── */}
-      <div className="flex items-center gap-3 mb-6">
+      <div className="flex items-center gap-2 md:gap-3 mb-6 flex-wrap">
         <button
           onClick={() => router.push("/tasks")}
-          className="p-1.5 rounded-lg hover:bg-surface-hover text-text-secondary transition-colors"
+          className="p-1.5 rounded-lg hover:bg-surface-hover text-text-secondary transition-colors shrink-0"
         >
           <ArrowLeft size={20} />
         </button>
-        <h1 className="text-2xl font-extrabold flex-1">{task.title}</h1>
-        <Button variant="secondary" size="sm" onClick={openEdit}>
-          <Edit2 size={14} className="mr-1" /> Edit
-        </Button>
-        <Button variant="danger" size="sm" onClick={() => setShowDelete(true)}>
-          <Trash2 size={14} className="mr-1" /> Delete
-        </Button>
+        <h1 className="text-xl md:text-2xl font-extrabold flex-1 min-w-0 truncate">{task.title}</h1>
+        <div className="flex items-center gap-2 shrink-0">
+          <Button variant="secondary" size="sm" onClick={openEdit}>
+            <Edit2 size={14} className="mr-1" /> Edit
+          </Button>
+          <Button variant="danger" size="sm" onClick={() => setShowDelete(true)}>
+            <Trash2 size={14} className="mr-1" /> Delete
+          </Button>
+        </div>
       </div>
 
       {/* ── 상세 카드 (Detail card) ── */}

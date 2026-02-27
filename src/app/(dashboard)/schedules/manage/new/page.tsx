@@ -166,7 +166,7 @@ function NewScheduleContent(): React.ReactElement {
           <ArrowLeft size={20} />
         </button>
         <div>
-          <h1 className="text-2xl font-extrabold text-text">New Schedule</h1>
+          <h1 className="text-xl md:text-2xl font-extrabold text-text">New Schedule</h1>
           <p className="text-sm text-text-muted mt-0.5">
             Create a new schedule draft
           </p>
@@ -248,7 +248,7 @@ function NewScheduleContent(): React.ReactElement {
           </div>
 
           {/* 시프트 + 포지션 (Shift + Position — optional) */}
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label
                 htmlFor="shift"
@@ -328,7 +328,7 @@ function NewScheduleContent(): React.ReactElement {
           )}
 
           {/* 시간 (Time range — optional) */}
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label
                 htmlFor="start-time"

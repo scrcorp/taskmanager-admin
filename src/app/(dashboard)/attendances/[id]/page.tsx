@@ -136,7 +136,7 @@ export default function AttendanceDetailPage(): React.ReactElement {
         >
           <ArrowLeft size={20} />
         </button>
-        <h1 className="text-2xl font-extrabold flex-1">Attendance Detail</h1>
+        <h1 className="text-xl md:text-2xl font-extrabold flex-1 min-w-0 truncate">Attendance Detail</h1>
         <Button variant="secondary" size="sm" onClick={openCorrect}>
           <Edit2 size={14} className="mr-1" /> Correct
         </Button>

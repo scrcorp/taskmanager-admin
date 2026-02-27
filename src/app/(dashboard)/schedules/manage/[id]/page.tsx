@@ -144,17 +144,17 @@ export default function ScheduleDetailPage(): React.ReactElement {
   return (
     <div>
       {/* 헤더 (Header) */}
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 mb-6">
         <div className="flex items-center gap-3">
           <button
             type="button"
             onClick={() => router.push("/schedules/manage")}
-            className="p-2 rounded-lg text-text-muted hover:text-text hover:bg-surface-hover transition-colors"
+            className="p-2 rounded-lg text-text-muted hover:text-text hover:bg-surface-hover transition-colors shrink-0"
           >
             <ArrowLeft size={20} />
           </button>
           <div>
-            <h1 className="text-2xl font-extrabold text-text">
+            <h1 className="text-xl md:text-2xl font-extrabold text-text">
               Schedule Detail
             </h1>
             <p className="text-sm text-text-muted mt-0.5">
@@ -164,10 +164,11 @@ export default function ScheduleDetailPage(): React.ReactElement {
         </div>
 
         {/* 상태 배지 + 대리 근무 버튼 (Status badge + Substitute button) */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 shrink-0">
           {isGmPlus && schedule.status !== "cancelled" && (
             <Button
               variant="secondary"
+              size="sm"
               onClick={() => setShowSubstituteModal(true)}
             >
               <UserRoundPlus size={16} />
@@ -257,7 +258,7 @@ export default function ScheduleDetailPage(): React.ReactElement {
           )}
 
           {/* 생성자/승인자 정보 (Creator/Approver info) */}
-          <div className="pt-2 border-t border-border grid grid-cols-2 gap-4">
+          <div className="pt-2 border-t border-border grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <p className="text-xs text-text-muted">Created by</p>
               <p className="text-sm text-text">
@@ -304,7 +305,7 @@ export default function ScheduleDetailPage(): React.ReactElement {
 
       {/* 액션 버튼 (Action buttons) */}
       <Card padding="p-4" className="max-w-2xl">
-        <div className="flex items-center justify-end gap-2">
+        <div className="flex items-center justify-end gap-2 flex-wrap">
           {/* Draft 상태: Submit 버튼 — Draft: show Submit button */}
           {schedule.status === "draft" && (
             <>

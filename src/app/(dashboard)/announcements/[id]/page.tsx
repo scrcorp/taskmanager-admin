@@ -139,9 +139,9 @@ export default function AnnouncementDetailPage(): React.ReactElement {
       {/* Detail Card */}
       <Card>
         {/* Header with actions */}
-        <div className="flex items-start justify-between mb-6">
+        <div className="flex flex-col md:flex-row md:items-start justify-between gap-3 mb-6">
           <div className="flex-1 min-w-0">
-            <h1 className="text-xl font-bold text-text mb-2">
+            <h1 className="text-lg md:text-xl font-bold text-text mb-2">
               {announcement.title}
             </h1>
             <div className="flex items-center gap-3 flex-wrap">
@@ -156,7 +156,7 @@ export default function AnnouncementDetailPage(): React.ReactElement {
               </Badge>
             </div>
           </div>
-          <div className="flex items-center gap-2 ml-4">
+          <div className="flex items-center gap-2 shrink-0">
             <Button variant="secondary" size="sm" onClick={handleOpenEdit}>
               <Edit size={14} />
               Edit

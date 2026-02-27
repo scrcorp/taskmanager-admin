@@ -386,17 +386,17 @@ export default function UserDetailPage(): React.ReactElement {
 
       {/* User Profile Card */}
       <div className="bg-card border border-border rounded-xl p-6 mb-6">
-        <div className="flex items-start justify-between">
-          <div className="flex items-start gap-5">
+        <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
+          <div className="flex items-start gap-4 md:gap-5">
             {/* Avatar */}
-            <div className="flex items-center justify-center h-16 w-16 rounded-full bg-accent-muted text-accent text-xl font-bold flex-shrink-0">
+            <div className="flex items-center justify-center h-12 w-12 md:h-16 md:w-16 rounded-full bg-accent-muted text-accent text-lg md:text-xl font-bold flex-shrink-0">
               {user.full_name.charAt(0).toUpperCase()}
             </div>
 
             {/* User Info */}
             <div>
-              <div className="flex items-center gap-3 mb-1">
-                <h1 className="text-2xl font-extrabold text-text">
+              <div className="flex items-center gap-2 md:gap-3 mb-1 flex-wrap">
+                <h1 className="text-xl md:text-2xl font-extrabold text-text">
                   {user.full_name}
                 </h1>
                 <Badge variant={getRoleBadgeVariant(user.role_name)}>
@@ -411,7 +411,7 @@ export default function UserDetailPage(): React.ReactElement {
               </p>
 
               {/* Detail Grid */}
-              <div className="grid grid-cols-2 gap-x-8 gap-y-2">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2">
                 <div>
                   <span className="text-xs text-text-muted block">
                     Email
@@ -442,7 +442,7 @@ export default function UserDetailPage(): React.ReactElement {
 
           {/* Action Buttons */}
           {canManageUsers && (
-            <div className="flex items-center gap-2 flex-shrink-0">
+            <div className="flex items-center gap-2 flex-shrink-0 flex-wrap">
               <Button variant="secondary" size="sm" onClick={handleOpenEdit}>
                 <Edit className="h-4 w-4" />
                 Edit
