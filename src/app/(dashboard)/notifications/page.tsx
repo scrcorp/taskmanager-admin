@@ -19,9 +19,10 @@ import {
 } from "@/components/ui";
 import { useToast } from "@/components/ui/Toast";
 import { timeAgo, parseApiError } from "@/lib/utils";
+import api from "@/lib/api";
 import type { Notification } from "@/types";
 
-/** reference_type → admin 경로 매핑 */
+/** reference_type → admin 경로 매핑 (동기 resolve 가능한 것만) */
 function getNotificationHref(referenceType: string | null, referenceId: string | null): string | null {
   if (!referenceType || !referenceId) return null;
   switch (referenceType) {
@@ -34,9 +35,19 @@ function getNotificationHref(referenceType: string | null, referenceId: string |
     case "attendance":
       return `/attendances/${referenceId}`;
     case "work_assignment":
-      return `/schedules`;
+      return null; // 비동기 resolve 필요 — handled in resolveWorkAssignmentHref
     default:
       return null;
+  }
+}
+
+/** work_assignment → cl_instance 상세 경로를 비동기로 resolve */
+async function resolveWorkAssignmentHref(assignmentId: string): Promise<string> {
+  try {
+    const { data } = await api.get(`/admin/checklist-instances/by-assignment/${assignmentId}`);
+    return `/checklists/instances/${data.instance_id}`;
+  } catch {
+    return `/checklists/instances`;
   }
 }
 
@@ -126,10 +137,16 @@ export default function NotificationsPage() {
           {notifications.map((n: Notification) => {
             const badge = typeBadge(n.type);
             const href = getNotificationHref(n.reference_type, n.reference_id);
+            const isClickable = href || n.reference_type === "work_assignment";
 
-            const handleClick = () => {
+            const handleClick = async () => {
               if (!n.is_read) markRead.mutate(n.id);
-              if (href) router.push(href);
+              if (href) {
+                router.push(href);
+              } else if (n.reference_type === "work_assignment" && n.reference_id) {
+                const resolved = await resolveWorkAssignmentHref(n.reference_id);
+                router.push(resolved);
+              }
             };
 
             return (
@@ -137,7 +154,7 @@ export default function NotificationsPage() {
                 key={n.id}
                 onClick={handleClick}
                 className={`p-4 flex items-start gap-3 transition-colors ${
-                  href ? "cursor-pointer hover:bg-surface-hover" : ""
+                  isClickable ? "cursor-pointer hover:bg-surface-hover" : ""
                 } ${
                   n.is_read
                     ? "opacity-60"
@@ -162,7 +179,7 @@ export default function NotificationsPage() {
                     </span>
                   </div>
                   <p className="text-sm text-text">{n.message}</p>
-                  {href && (
+                  {isClickable && (
                     <p className="text-xs text-accent mt-1 flex items-center gap-1">
                       <ExternalLink size={12} />
                       View details
