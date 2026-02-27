@@ -3,27 +3,27 @@
 /**
  * 체크리스트 아이템 행 컴포넌트.
  *
- * - 기본 모드: completion 상태 + 기존 리뷰 뱃지 표시
- * - 리뷰 모드: O/△/X 버튼 + 💬 코멘트 + 📎 미디어 첨부
+ * - 기본 모드: completion 상태 + 리뷰 뱃지 + 말풍선 아이콘(항상, 콘텐츠 수 뱃지)
+ * - 리뷰 모드: O/△/X 버튼만 (콘텐츠는 채팅 모달에서)
  * - 자체 저장 없음 — 부모가 batch save 처리
  */
 
 import React, { useState } from "react";
 import { Check, X, Clock, Camera, FileText, MapPin, MessageCircle, Film } from "lucide-react";
-import { Badge, Textarea, ImageUpload } from "@/components/ui";
+import { Badge } from "@/components/ui";
 import { cn, formatActionTime } from "@/lib/utils";
+import { ReviewChatModal } from "./ReviewChatModal";
 import type { ChecklistInstanceSnapshotItem } from "@/types";
 
 export interface LocalReview {
   result: string;
-  comment: string | null;
-  photo_url: string | null;
 }
 
 interface ChecklistItemRowProps {
   item: ChecklistInstanceSnapshotItem;
   index: number;
   workDate: string;
+  instanceId: string;
   reviewMode?: boolean;
   localReview?: LocalReview | null;
   onReviewChange?: (review: LocalReview | null) => void;
@@ -43,59 +43,24 @@ export function ChecklistItemRow({
   item,
   index,
   workDate,
+  instanceId,
   reviewMode = false,
   localReview,
   onReviewChange,
 }: ChecklistItemRowProps): React.ReactElement {
   const isCompleted = !!item.is_completed;
   const [isPhotoExpanded, setIsPhotoExpanded] = useState(false);
-  const [showComment, setShowComment] = useState(!!localReview?.comment);
+  const [isChatOpen, setIsChatOpen] = useState(false);
   const review = item.review;
+  const contentsCount = review?.contents?.length ?? 0;
 
   const handleResultClick = (result: string) => {
     if (!onReviewChange) return;
     if (localReview?.result === result) {
-      // 같은 버튼 다시 클릭 → 결과 해제, comment/photo 유지
-      if (!localReview.comment && !localReview.photo_url) {
-        onReviewChange(null);
-      } else {
-        onReviewChange({ result: "", comment: localReview.comment, photo_url: localReview.photo_url });
-      }
+      onReviewChange(null);
     } else {
-      onReviewChange({
-        result,
-        comment: localReview?.comment ?? null,
-        photo_url: localReview?.photo_url ?? null,
-      });
+      onReviewChange({ result });
     }
-  };
-
-  const handleCommentToggle = () => {
-    setShowComment(!showComment);
-    if (!localReview && onReviewChange) {
-      onReviewChange({ result: "", comment: null, photo_url: null });
-    }
-  };
-
-  const handleCommentChange = (text: string) => {
-    if (!onReviewChange) return;
-    onReviewChange({
-      ...(localReview ?? { result: "", photo_url: null }),
-      comment: text || null,
-    });
-  };
-
-  const handleMediaUpload = (url: string) => {
-    if (!onReviewChange) return;
-    onReviewChange({
-      ...(localReview ?? { result: "", comment: null }),
-      photo_url: url,
-    });
-  };
-
-  const handleMediaRemove = () => {
-    if (!onReviewChange || !localReview) return;
-    onReviewChange({ ...localReview, photo_url: null });
   };
 
   return (
@@ -125,7 +90,7 @@ export function ChecklistItemRow({
           {item.verification_type !== "none" && (
             <Badge variant="accent">{item.verification_type}</Badge>
           )}
-          {/* 기존 리뷰 뱃지 (리뷰 모드 아닐 때) */}
+          {/* 리뷰 뱃지 (리뷰 모드 아닐 때) */}
           {!reviewMode && review && (
             <Badge
               variant={
@@ -135,13 +100,28 @@ export function ChecklistItemRow({
               {review.result === "pass" ? "O" : review.result === "fail" ? "X" : "△"}
             </Badge>
           )}
+          {/* 말풍선 아이콘 — 리뷰가 있으면 항상 표시, 클릭 시 채팅 모달 */}
+          {!reviewMode && review && (
+            <button
+              type="button"
+              onClick={() => setIsChatOpen(true)}
+              className="relative p-0.5 rounded text-text-muted hover:text-accent transition-colors"
+            >
+              <MessageCircle size={14} />
+              {contentsCount > 0 && (
+                <span className="absolute -top-1.5 -right-1.5 min-w-[14px] h-[14px] rounded-full bg-accent text-white text-[9px] font-bold flex items-center justify-center px-0.5">
+                  {contentsCount}
+                </span>
+              )}
+            </button>
+          )}
         </div>
 
         {item.description && (
           <p className="text-xs text-text-secondary mt-1 ml-6">{item.description}</p>
         )}
 
-        {/* Completion details — 스냅샷 아이템 필드에서 직접 읽음 */}
+        {/* Completion details */}
         {isCompleted && (
           <div className="mt-2 ml-6 space-y-1.5">
             <div className="flex items-center gap-2 text-xs text-text-muted">
@@ -202,22 +182,14 @@ export function ChecklistItemRow({
           </div>
         )}
 
-        {/* 기존 리뷰 표시 (리뷰 모드 아닐 때) */}
+        {/* 기존 리뷰 reviewer 표시 (리뷰 모드 아닐 때) */}
         {!reviewMode && review && (
-          <div className="mt-1.5 ml-6 space-y-1">
-            {review.comment && <p className="text-xs text-text-secondary">{review.comment}</p>}
-            {review.photo_url && (
-              isVideo(review.photo_url) ? (
-                <video src={review.photo_url} controls className="max-w-[200px] rounded-lg border border-border" />
-              ) : (
-                <img src={review.photo_url} alt="Review" className="max-w-[120px] rounded-lg border border-border" />
-              )
-            )}
+          <div className="mt-1.5 ml-6">
             <p className="text-xs text-text-muted">Reviewed by {review.reviewer_name ?? "Unknown"}</p>
           </div>
         )}
 
-        {/* 리뷰 모드 — O/△/X 버튼 + 코멘트 + 미디어 */}
+        {/* 리뷰 모드 — O/△/X 버튼만 */}
         {reviewMode && (
           <div className="mt-2 ml-6">
             <div className="flex items-center gap-1.5">
@@ -244,47 +216,23 @@ export function ChecklistItemRow({
                   {opt.label}
                 </button>
               ))}
-              {/* 코멘트 토글 — 항상 표시 */}
-              <button
-                type="button"
-                onClick={handleCommentToggle}
-                className={cn(
-                  "ml-1 p-1 rounded-md",
-                  showComment || localReview?.comment
-                    ? "text-accent"
-                    : "text-text-muted hover:text-text-secondary",
-                )}
-              >
-                <MessageCircle size={14} />
-              </button>
-              {/* 미디어 첨부 — 📎 버튼만 (썸네일은 아래에서 별도 표시) */}
-              <ImageUpload
-                compact
-                onUpload={handleMediaUpload}
-              />
             </div>
-            {/* 미디어 썸네일 */}
-            {localReview?.photo_url && (
-              <div className="mt-1.5">
-                <ImageUpload
-                  value={localReview.photo_url}
-                  onUpload={handleMediaUpload}
-                  onRemove={handleMediaRemove}
-                />
-              </div>
-            )}
-            {/* 코멘트 입력 */}
-            {showComment && (
-              <Textarea
-                value={localReview?.comment ?? ""}
-                onChange={(e) => handleCommentChange(e.target.value)}
-                placeholder="Comment..."
-                className="mt-1.5 text-xs min-h-[48px]"
-              />
-            )}
           </div>
         )}
       </div>
+
+      {/* 채팅 모달 */}
+      {review && (
+        <ReviewChatModal
+          isOpen={isChatOpen}
+          onClose={() => setIsChatOpen(false)}
+          instanceId={instanceId}
+          itemIndex={item.item_index}
+          itemTitle={item.title}
+          reviewResult={review.result}
+          contents={review.contents ?? []}
+        />
+      )}
     </div>
   );
 }

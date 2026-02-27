@@ -12,6 +12,7 @@ import type {
   ChecklistInstanceFilters,
   ChecklistItemReview,
   PaginatedResponse,
+  ReviewContent,
 } from "@/types";
 
 /**
@@ -66,31 +67,29 @@ export const useChecklistInstance = (
 };
 
 /**
- * 아이템 리뷰 upsert 훅 -- 체크리스트 아이템에 리뷰를 생성/수정합니다.
+ * 아이템 리뷰 upsert 훅 -- 체크리스트 아이템에 리뷰를 생성/수정합니다 (result만).
  *
- * Custom hook to upsert a review on a checklist item.
+ * Custom hook to upsert a review on a checklist item (result only).
  */
 export function useUpsertItemReview(): UseMutationResult<
   ChecklistItemReview,
   Error,
-  { instanceId: string; itemIndex: number; result: string; comment?: string | null; photo_url?: string | null }
+  { instanceId: string; itemIndex: number; result: string }
 > {
   const queryClient = useQueryClient();
   return useMutation<
     ChecklistItemReview,
     Error,
-    { instanceId: string; itemIndex: number; result: string; comment?: string | null; photo_url?: string | null }
+    { instanceId: string; itemIndex: number; result: string }
   >({
     mutationFn: async ({
       instanceId,
       itemIndex,
       result,
-      comment,
-      photo_url,
     }): Promise<ChecklistItemReview> => {
       const response: AxiosResponse<ChecklistItemReview> = await api.put(
         `/admin/checklist-instances/${instanceId}/items/${itemIndex}/review`,
-        { result, comment: comment ?? null, photo_url: photo_url ?? null },
+        { result },
       );
       return response.data;
     },
@@ -121,6 +120,71 @@ export function useDeleteItemReview(): UseMutationResult<
     mutationFn: async ({ instanceId, itemIndex }): Promise<void> => {
       await api.delete(
         `/admin/checklist-instances/${instanceId}/items/${itemIndex}/review`,
+      );
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({
+        queryKey: ["checklist-instances", variables.instanceId],
+      });
+    },
+  });
+}
+
+/**
+ * 리뷰 콘텐츠 추가 훅 -- 리뷰에 텍스트/사진/영상을 추가합니다.
+ *
+ * Custom hook to add content (text/photo/video) to a review.
+ */
+export function useAddReviewContent(): UseMutationResult<
+  ReviewContent,
+  Error,
+  { instanceId: string; itemIndex: number; type: string; content: string }
+> {
+  const queryClient = useQueryClient();
+  return useMutation<
+    ReviewContent,
+    Error,
+    { instanceId: string; itemIndex: number; type: string; content: string }
+  >({
+    mutationFn: async ({
+      instanceId,
+      itemIndex,
+      type,
+      content,
+    }): Promise<ReviewContent> => {
+      const response: AxiosResponse<ReviewContent> = await api.post(
+        `/admin/checklist-instances/${instanceId}/items/${itemIndex}/review/contents`,
+        { type, content },
+      );
+      return response.data;
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({
+        queryKey: ["checklist-instances", variables.instanceId],
+      });
+    },
+  });
+}
+
+/**
+ * 리뷰 콘텐츠 삭제 훅.
+ *
+ * Custom hook to delete a review content item.
+ */
+export function useDeleteReviewContent(): UseMutationResult<
+  void,
+  Error,
+  { instanceId: string; itemIndex: number; contentId: string }
+> {
+  const queryClient = useQueryClient();
+  return useMutation<
+    void,
+    Error,
+    { instanceId: string; itemIndex: number; contentId: string }
+  >({
+    mutationFn: async ({ instanceId, itemIndex, contentId }): Promise<void> => {
+      await api.delete(
+        `/admin/checklist-instances/${instanceId}/items/${itemIndex}/review/contents/${contentId}`,
       );
     },
     onSuccess: (_data, variables) => {

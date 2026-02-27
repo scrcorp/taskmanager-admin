@@ -53,11 +53,7 @@ export function ChecklistInstanceDetail({
     const map = new Map<number, LocalReview>();
     for (const item of snapshot) {
       if (item.review) {
-        map.set(item.item_index, {
-          result: item.review.result,
-          comment: item.review.comment,
-          photo_url: item.review.photo_url,
-        });
+        map.set(item.item_index, { result: item.review.result });
       }
     }
     setLocalReviews(map);
@@ -86,22 +82,16 @@ export function ChecklistInstanceDetail({
 
   /** 변경된 리뷰만 서버로 전송 (result가 없는 항목은 스킵) */
   const handleSave = useCallback(async () => {
-    const changes: { itemIndex: number; result: string; comment: string | null; photo_url: string | null }[] = [];
+    const changes: { itemIndex: number; result: string }[] = [];
 
     for (const [itemIndex, local] of localReviews) {
-      if (!local.result) continue; // result 없으면 스킵
+      if (!local.result) continue;
 
       const item = snapshot.find((s) => s.item_index === itemIndex);
       const existing = item?.review;
 
-      if (!existing) {
-        changes.push({ itemIndex, result: local.result, comment: local.comment, photo_url: local.photo_url });
-      } else if (
-        existing.result !== local.result ||
-        existing.comment !== local.comment ||
-        existing.photo_url !== local.photo_url
-      ) {
-        changes.push({ itemIndex, result: local.result, comment: local.comment, photo_url: local.photo_url });
+      if (!existing || existing.result !== local.result) {
+        changes.push({ itemIndex, result: local.result });
       }
     }
 
@@ -118,8 +108,6 @@ export function ChecklistInstanceDetail({
           instanceId: instance.id,
           itemIndex: ch.itemIndex,
           result: ch.result,
-          comment: ch.comment,
-          photo_url: ch.photo_url,
         });
       }
       toast({ type: "success", message: `${changes.length} review(s) saved.` });
@@ -204,6 +192,7 @@ export function ChecklistInstanceDetail({
                 item={item}
                 index={index}
                 workDate={instance.work_date}
+                instanceId={instance.id}
                 reviewMode={isReviewMode}
                 localReview={localReviews.get(item.item_index) ?? null}
                 onReviewChange={(r) => handleReviewChange(item.item_index, r)}

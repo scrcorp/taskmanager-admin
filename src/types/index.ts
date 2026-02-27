@@ -493,11 +493,22 @@ export interface ChecklistInstanceSnapshotItem {
     reviewer_id: string;
     reviewer_name: string | null;
     result: "pass" | "fail" | "caution";
-    comment: string | null;
-    photo_url: string | null;
+    contents: ReviewContent[];
     created_at: string;
     updated_at: string;
   } | null;
+}
+
+/** 리뷰 콘텐츠 (텍스트/사진/영상).
+ * Review content item — text, photo, or video attached to a review. */
+export interface ReviewContent {
+  id: string;
+  review_id: string;
+  author_id: string;
+  author_name: string | null;
+  type: "text" | "photo" | "video";
+  content: string;
+  created_at: string;
 }
 
 /** 체크리스트 아이템 리뷰 응답 타입.
@@ -509,8 +520,7 @@ export interface ChecklistItemReview {
   reviewer_id: string;
   reviewer_name: string | null;
   result: "pass" | "fail" | "caution";
-  comment: string | null;
-  photo_url: string | null;
+  contents: ReviewContent[];
   created_at: string;
   updated_at: string;
 }
