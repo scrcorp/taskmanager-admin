@@ -1,4 +1,4 @@
-export { Button } from "./Button";
+export { Button, ClearButton } from "./Button";
 export { Input } from "./Input";
 export { Select } from "./Select";
 export { Textarea } from "./Textarea";
@@ -12,3 +12,4 @@ export { Pagination } from "./Pagination";
 export { ConfirmDialog } from "./ConfirmDialog";
 export { EmptyState } from "./EmptyState";
 export { LoadingSpinner } from "./LoadingSpinner";
+export { ImageUpload } from "./ImageUpload";
