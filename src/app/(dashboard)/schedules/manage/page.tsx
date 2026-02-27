@@ -8,8 +8,8 @@
  * Clicking an existing schedule navigates to its detail page.
  */
 
-import React, { useState, useMemo, useCallback } from "react";
-import { useRouter } from "next/navigation";
+import React, { useState, useMemo, useCallback, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   Plus,
   ArrowLeft,
@@ -197,12 +197,13 @@ function StoreWeekCalendar({
 
 // ─── Main Page ──────────────────────────────────────────
 
-export default function ScheduleManagePage(): React.ReactElement {
+function ScheduleManageContent(): React.ReactElement {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [activeTab, setActiveTab] = useState<string>("all");
   const [selectedStoreId, setSelectedStoreId] = useState<string>("");
   const [selectedDate, setSelectedDate] = useState<string>(
-    () => new Date().toISOString().split("T")[0],
+    () => searchParams.get("week") ?? new Date().toISOString().split("T")[0],
   );
 
   const { data: stores } = useStores();
@@ -388,5 +389,13 @@ export default function ScheduleManagePage(): React.ReactElement {
         ))}
       </div>
     </div>
+  );
+}
+
+export default function ScheduleManagePage(): React.ReactElement {
+  return (
+    <Suspense>
+      <ScheduleManageContent />
+    </Suspense>
   );
 }

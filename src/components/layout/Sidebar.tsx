@@ -15,29 +15,47 @@ import {
   LogOut,
   Building2,
   Star,
+  ChevronDown,
+  ChevronRight,
+  List,
+  Settings,
+  FileSearch,
 } from "lucide-react";
-import React from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { useAuthStore } from "@/stores/authStore";
 import { useUnreadCount } from "@/hooks";
 import { cn } from "@/lib/utils";
 import { ThemeToggle } from "./ThemeToggle";
 
-/** 사이드바 내비게이션 항목 타입.
- *  Sidebar navigation item type. */
+interface NavChild {
+  href: string;
+  label: string;
+  icon?: React.ComponentType<{ size?: number }>;
+  indent?: boolean;
+}
+
 interface NavItem {
   href: string;
   label: string;
   icon: React.ComponentType<{ size?: number }>;
+  children?: NavChild[];
 }
 
-/** 사이드바 내비게이션 항목 목록.
- *  Sidebar navigation items list. */
 const navItems: NavItem[] = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
   { href: "/stores", label: "Stores", icon: Store },
   { href: "/users", label: "Staff", icon: Users },
-  { href: "/schedules", label: "Schedules", icon: CalendarClock },
-  { href: "/attendances", label: "Attendance", icon: Clock },
+  {
+    href: "/schedules",
+    label: "Schedules",
+    icon: CalendarClock,
+    children: [
+      { href: "/schedules/list", label: "List", icon: List },
+      { href: "/schedules/completion-log", label: "Logs", icon: FileSearch, indent: true },
+      { href: "/attendances", label: "Attendance", icon: Clock },
+      { href: "/schedules/manage", label: "Manage", icon: Settings },
+    ],
+  },
   { href: "/checklists", label: "Checklists", icon: CheckSquare },
   { href: "/tasks", label: "Tasks", icon: Zap },
   { href: "/announcements", label: "Notices", icon: Megaphone },
@@ -56,17 +74,72 @@ export function Sidebar() {
   const { data: unreadRaw } = useUnreadCount();
   const badgeCount: number = unreadRaw ?? 0;
 
-  /** 현재 경로가 활성 상태인지 판별합니다.
-   *  Determine if the given href matches the current path.
-   *  Longer paths take priority to avoid parent items matching child routes. */
+  const isGroupActive = (item: NavItem): boolean =>
+    pathname.startsWith(item.href) ||
+    (item.children?.some((c) => pathname.startsWith(c.href)) ?? false);
+
+  // 부모 메뉴가 활성 경로면 초기에 펼침
+  const [expanded, setExpanded] = useState<Set<string>>(() => {
+    const initial = new Set<string>();
+    for (const item of navItems) {
+      if (item.children?.length && isGroupActive(item)) {
+        initial.add(item.href);
+      }
+    }
+    return initial;
+  });
+
   const isActive = (href: string): boolean => {
     if (href === "/") return pathname === "/";
     if (!pathname.startsWith(href)) return false;
-    // Check if a more specific nav item matches
     const moreSpecific = navItems.some(
       (other) => other.href !== href && other.href.startsWith(href) && pathname.startsWith(other.href),
     );
     return !moreSpecific;
+  };
+
+  // pathname 변경 시 부모 활성이면 펼침, 비활성이면 닫음
+  useEffect(() => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      let changed = false;
+      for (const item of navItems) {
+        if (!item.children?.length) continue;
+        const active = isGroupActive(item);
+        if (active && !next.has(item.href)) { next.add(item.href); changed = true; }
+        if (!active && next.has(item.href)) { next.delete(item.href); changed = true; }
+      }
+      return changed ? next : prev;
+    });
+  }, [pathname]);
+
+  // 이번 주 월~일 날짜 계산
+  const currentWeek = useMemo(() => {
+    const today = new Date();
+    const day = today.getDay();
+    const diff = day === 0 ? -6 : 1 - day;
+    const monday = new Date(today);
+    monday.setDate(today.getDate() + diff);
+    const sunday = new Date(monday);
+    sunday.setDate(monday.getDate() + 6);
+    const fmt = (d: Date) => d.toISOString().slice(0, 10);
+    return { from: fmt(monday), to: fmt(sunday) };
+  }, []);
+
+  const getChildHref = (href: string): string => {
+    if (href === "/schedules/list") return `/schedules/list?from=${currentWeek.from}&to=${currentWeek.to}`;
+    if (href === "/schedules/completion-log") return `/schedules/completion-log?from=${currentWeek.from}&to=${currentWeek.to}`;
+    if (href === "/schedules/manage") return `/schedules/manage?week=${currentWeek.from}`;
+    if (href === "/attendances") return `/attendances?from=${currentWeek.from}&to=${currentWeek.to}`;
+    return href;
+  };
+
+  const toggleExpand = (href: string) => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      next.has(href) ? next.delete(href) : next.add(href);
+      return next;
+    });
   };
 
   return (
@@ -92,26 +165,65 @@ export function Sidebar() {
         {navItems.map((item: NavItem) => {
           const active: boolean = isActive(item.href);
           const Icon = item.icon;
+          const hasChildren = !!item.children?.length;
+          const isExpanded = expanded.has(item.href);
+
           return (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={cn(
-                "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
-                active
-                  ? "bg-accent-muted text-accent"
-                  : "text-text-secondary hover:bg-surface-hover hover:text-text"
+            <div key={item.href}>
+              <div
+                className={cn(
+                  "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
+                  active
+                    ? "bg-accent-muted text-accent"
+                    : "text-text-secondary hover:text-accent"
+                )}
+              >
+                <Link href={item.href} className="flex items-center gap-3 flex-1 min-w-0">
+                  <Icon size={18} />
+                  <span>{item.label}</span>
+                </Link>
+                {item.href === "/notifications" && badgeCount > 0 && (
+                  <span className="ml-auto bg-danger text-white text-[10px] font-bold rounded-full px-1.5 py-0.5 min-w-[18px] text-center">
+                    {badgeCount > 99 ? "99+" : badgeCount}
+                  </span>
+                )}
+                {hasChildren && (
+                  <button
+                    type="button"
+                    onClick={() => toggleExpand(item.href)}
+                    className="ml-auto p-0.5 rounded text-current opacity-60 hover:opacity-100 transition-opacity"
+                  >
+                    {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                  </button>
+                )}
+              </div>
+
+              {/* 서브메뉴 */}
+              {hasChildren && isExpanded && (
+                <div className="mt-0.5 ml-6 space-y-0.5">
+                  {item.children!.map((child) => {
+                    const childActive = pathname.startsWith(child.href);
+                    const ChildIcon = child.icon;
+                    return (
+                      <Link
+                        key={child.href}
+                        href={getChildHref(child.href)}
+                        className={cn(
+                          "flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors",
+                          child.indent && "ml-3",
+                          childActive
+                            ? "text-accent font-medium"
+                            : "text-text-secondary hover:text-accent"
+                        )}
+                      >
+                        {ChildIcon && <ChildIcon size={14} />}
+                        {child.label}
+                      </Link>
+                    );
+                  })}
+                </div>
               )}
-            >
-              <Icon size={18} />
-              <span>{item.label}</span>
-              {/* 읽지 않은 알림 배지 (Unread notification badge) */}
-              {item.href === "/notifications" && badgeCount > 0 && (
-                <span className="ml-auto bg-danger text-white text-[10px] font-bold rounded-full px-1.5 py-0.5 min-w-[18px] text-center">
-                  {badgeCount > 99 ? "99+" : badgeCount}
-                </span>
-              )}
-            </Link>
+            </div>
           );
         })}
       </nav>

@@ -1,26 +1,25 @@
 "use client";
 
 /**
- * 근태 관리 페이지 -- 날짜/매장/상태 필터가 있는 근태 기록 목록.
+ * 근태 관리 페이지 -- 날짜 범위/매장/상태 필터가 있는 근태 기록 목록.
  *
  * Attendance management page showing a list of attendance records
- * with date, store, and status filters.
+ * with date range, store, and status filters.
  */
 
-import React, { useState, useMemo } from "react";
-import { useRouter } from "next/navigation";
+import React, { useState, useMemo, useEffect, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   Clock,
   User,
   MapPin,
   Calendar,
-  LogIn,
-  LogOut,
   Coffee,
+  ArrowLeft,
 } from "lucide-react";
 import { useAttendances } from "@/hooks/useAttendances";
 import { useStores } from "@/hooks/useStores";
-import { Button, Card, Badge } from "@/components/ui";
+import { Button, Card, Badge, ClearButton } from "@/components/ui";
 import type { Attendance, Store } from "@/types";
 import { cn, formatFixedDate } from "@/lib/utils";
 
@@ -51,18 +50,32 @@ function formatMinutes(minutes: number | null): string {
   return `${h}h ${m.toString().padStart(2, "0")}m`;
 }
 
-export default function AttendancesPage(): React.ReactElement {
+function AttendancesContent(): React.ReactElement {
   const router = useRouter();
+  const searchParams = useSearchParams();
+
   const [activeTab, setActiveTab] = useState<string>("all");
   const [selectedStoreId, setSelectedStoreId] = useState<string>("");
-  const [selectedDate, setSelectedDate] = useState<string>("");
+  const [dateFrom, setDateFrom] = useState<string>(
+    () => searchParams.get("from") ?? "",
+  );
+  const [dateTo, setDateTo] = useState<string>(
+    () => searchParams.get("to") ?? "",
+  );
   const [page, setPage] = useState<number>(1);
   const perPage: number = 20;
+
+  useEffect(() => {
+    setDateFrom(searchParams.get("from") ?? "");
+    setDateTo(searchParams.get("to") ?? "");
+    setPage(1);
+  }, [searchParams]);
 
   const { data: stores } = useStores();
   const { data: attendancesData, isLoading } = useAttendances({
     store_id: selectedStoreId || undefined,
-    work_date: selectedDate || undefined,
+    date_from: dateFrom || undefined,
+    date_to: dateTo || undefined,
     status: activeTab !== "all" ? activeTab : undefined,
     page,
     per_page: perPage,
@@ -80,7 +93,14 @@ export default function AttendancesPage(): React.ReactElement {
   return (
     <div>
       {/* 헤더 (Header) */}
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex items-center gap-3 mb-4">
+        <button
+          type="button"
+          onClick={() => router.push("/schedules")}
+          className="p-2 rounded-lg text-text-muted hover:text-text hover:bg-surface-hover transition-colors"
+        >
+          <ArrowLeft size={20} />
+        </button>
         <div>
           <h1 className="text-2xl font-extrabold text-text">Attendance</h1>
           <p className="text-sm text-text-muted mt-0.5">
@@ -108,27 +128,28 @@ export default function AttendancesPage(): React.ReactElement {
           ))}
         </select>
 
-        {/* 날짜 필터 (Date filter) */}
+        {/* 날짜 범위 필터 (Date range filter) */}
         <input
           type="date"
-          value={selectedDate}
+          value={dateFrom}
           onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
-            setSelectedDate(e.target.value);
+            setDateFrom(e.target.value);
             setPage(1);
           }}
           className="px-3 py-2 text-sm bg-surface border border-border rounded-lg text-text focus:outline-none focus:ring-1 focus:ring-accent"
         />
-        {selectedDate && (
-          <button
-            type="button"
-            onClick={() => {
-              setSelectedDate("");
-              setPage(1);
-            }}
-            className="text-xs text-text-muted hover:text-text transition-colors"
-          >
-            Clear date
-          </button>
+        <span className="text-text-muted text-sm">–</span>
+        <input
+          type="date"
+          value={dateTo}
+          onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+            setDateTo(e.target.value);
+            setPage(1);
+          }}
+          className="px-3 py-2 text-sm bg-surface border border-border rounded-lg text-text focus:outline-none focus:ring-1 focus:ring-accent"
+        />
+        {(dateFrom || dateTo) && (
+          <ClearButton onClick={() => { setDateFrom(""); setDateTo(""); setPage(1); }} />
         )}
       </div>
 
@@ -272,5 +293,13 @@ export default function AttendancesPage(): React.ReactElement {
         </div>
       )}
     </div>
+  );
+}
+
+export default function AttendancesPage(): React.ReactElement {
+  return (
+    <Suspense>
+      <AttendancesContent />
+    </Suspense>
   );
 }

@@ -45,6 +45,23 @@ const sizeStyles: Record<ButtonSize, string> = {
   lg: "px-6 py-2.5 text-base gap-2",
 };
 
+interface ClearButtonProps {
+  onClick: () => void;
+  label?: string;
+}
+
+export function ClearButton({ onClick, label = "Clear" }: ClearButtonProps): React.ReactElement {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="text-xs text-accent hover:text-accent-light transition-colors"
+    >
+      {label}
+    </button>
+  );
+}
+
 export function Button({
   variant = "primary",
   size = "md",

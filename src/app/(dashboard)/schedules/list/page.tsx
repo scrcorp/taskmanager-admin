@@ -147,7 +147,7 @@ function AssignmentsListContent(): React.ReactElement {
     if (filterDateFrom) params.set("from", filterDateFrom);
     if (filterDateTo) params.set("to", filterDateTo);
     const query = params.toString();
-    router.push(`/completion-log${query ? `?${query}` : ""}`);
+    router.push(`/schedules/completion-log${query ? `?${query}` : ""}`);
   }, [router, filterDateFrom, filterDateTo]);
 
   return (
