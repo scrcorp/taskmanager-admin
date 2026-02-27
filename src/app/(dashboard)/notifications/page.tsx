@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { Bell, Check, CheckCheck, Mail, MailOpen } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { Bell, Check, CheckCheck, ExternalLink, Mail, MailOpen } from "lucide-react";
 import {
   useNotifications,
   useUnreadCount,
@@ -20,11 +21,31 @@ import { useToast } from "@/components/ui/Toast";
 import { timeAgo, parseApiError } from "@/lib/utils";
 import type { Notification } from "@/types";
 
+/** reference_type → admin 경로 매핑 */
+function getNotificationHref(referenceType: string | null, referenceId: string | null): string | null {
+  if (!referenceType || !referenceId) return null;
+  switch (referenceType) {
+    case "additional_task":
+      return `/tasks/${referenceId}`;
+    case "announcement":
+      return `/announcements/${referenceId}`;
+    case "schedule":
+      return `/schedules/${referenceId}`;
+    case "attendance":
+      return `/attendances/${referenceId}`;
+    case "work_assignment":
+      return `/schedules`;
+    default:
+      return null;
+  }
+}
+
 /** 알림 페이지 — 알림 목록 조회, 읽음 처리, 전체 읽음 처리.
  *
  * Notifications page — list, mark read, and mark all read.
  */
 export default function NotificationsPage() {
+  const router = useRouter();
   const { toast } = useToast();
   const [page, setPage] = useState<number>(1);
   const perPage: number = 20;
@@ -104,10 +125,20 @@ export default function NotificationsPage() {
         <div className="space-y-2">
           {notifications.map((n: Notification) => {
             const badge = typeBadge(n.type);
+            const href = getNotificationHref(n.reference_type, n.reference_id);
+
+            const handleClick = () => {
+              if (!n.is_read) markRead.mutate(n.id);
+              if (href) router.push(href);
+            };
+
             return (
               <Card
                 key={n.id}
+                onClick={handleClick}
                 className={`p-4 flex items-start gap-3 transition-colors ${
+                  href ? "cursor-pointer hover:bg-surface-hover" : ""
+                } ${
                   n.is_read
                     ? "opacity-60"
                     : "border-l-2 border-l-accent"
@@ -131,10 +162,10 @@ export default function NotificationsPage() {
                     </span>
                   </div>
                   <p className="text-sm text-text">{n.message}</p>
-                  {n.reference_type && (
-                    <p className="text-xs text-text-muted mt-1">
-                      Ref: {n.reference_type}
-                      {n.reference_id ? ` #${n.reference_id.slice(0, 8)}` : ""}
+                  {href && (
+                    <p className="text-xs text-accent mt-1 flex items-center gap-1">
+                      <ExternalLink size={12} />
+                      View details
                     </p>
                   )}
                 </div>
@@ -142,7 +173,7 @@ export default function NotificationsPage() {
                 {/* 읽음 처리 버튼 (Mark read button) */}
                 {!n.is_read && (
                   <button
-                    onClick={() => handleMarkRead(n.id)}
+                    onClick={(e) => { e.stopPropagation(); handleMarkRead(n.id); }}
                     className="p-1.5 rounded-lg text-text-muted hover:text-accent hover:bg-surface-hover transition-colors shrink-0"
                     title="Mark as read"
                   >
