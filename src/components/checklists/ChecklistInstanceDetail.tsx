@@ -3,15 +3,16 @@
 /**
  * 체크리스트 인스턴스 상세 컴포넌트 -- 인스턴스 정보, 진행률, 체크리스트 아이템을 표시합니다.
  * Review 버튼으로 리뷰 모드 진입, batch save로 변경된 리뷰만 서버에 저장합니다.
+ * 인라인 코멘트 사진은 presigned URL로 업로드 후 리뷰와 함께 저장됩니다.
  */
 
 import React, { useState, useCallback, useMemo } from "react";
-import { ClipboardCheck, Camera, FileText, CheckCircle, AlertTriangle, ChevronsDownUp, ChevronsUpDown } from "lucide-react";
+import { ClipboardCheck, Camera, FileText, CheckCircle, AlertTriangle, ChevronsDownUp, ChevronsUpDown, RotateCcw } from "lucide-react";
 import { Card, Badge, Button, EmptyState } from "@/components/ui";
 import { useToast } from "@/components/ui/Toast";
 import { formatFixedDate, parseApiError } from "@/lib/utils";
 import { ChecklistItemRow, type LocalReview } from "./ChecklistItemRow";
-import { useUpsertItemReview } from "@/hooks/useChecklistInstances";
+import { useUpsertItemReview, usePresignedUrl } from "@/hooks/useChecklistInstances";
 import type { ChecklistInstance } from "@/types";
 
 /** 인스턴스 상태에 따른 뱃지 변형 매핑 */
@@ -35,6 +36,7 @@ export function ChecklistInstanceDetail({
 }: ChecklistInstanceDetailProps): React.ReactElement {
   const { toast } = useToast();
   const upsertReview = useUpsertItemReview();
+  const presignedUrl = usePresignedUrl();
 
   const percentage =
     instance.total_items > 0
@@ -49,15 +51,22 @@ export function ChecklistInstanceDetail({
     let notes = 0;
     let reviewed = 0;
     let missing = 0;
+    let pendingReReview = 0;
 
     for (const item of snapshot) {
       if (item.photo_url) photos++;
       if (item.note) notes++;
-      if (item.review) reviewed++;
+      if (item.review) {
+        if (item.review.result === "pending_re_review") {
+          pendingReReview++;
+        } else {
+          reviewed++;
+        }
+      }
       if (!item.is_completed && item.verification_type !== "none") missing++;
     }
 
-    return { photos, notes, reviewed, missing };
+    return { photos, notes, reviewed, missing, pendingReReview };
   }, [snapshot]);
 
   // Review mode
@@ -81,9 +90,13 @@ export function ChecklistInstanceDetail({
   }, [snapshot]);
 
   const exitReviewMode = useCallback(() => {
+    // Clean up any object URLs
+    for (const [, review] of localReviews) {
+      if (review.commentPhotoPreview) URL.revokeObjectURL(review.commentPhotoPreview);
+    }
     setIsReviewMode(false);
     setLocalReviews(new Map());
-  }, []);
+  }, [localReviews]);
 
   const handleReviewChange = useCallback(
     (itemIndex: number, review: LocalReview | null) => {
@@ -92,6 +105,9 @@ export function ChecklistInstanceDetail({
         if (review) {
           next.set(itemIndex, review);
         } else {
+          // Clean up object URL
+          const old = prev.get(itemIndex);
+          if (old?.commentPhotoPreview) URL.revokeObjectURL(old.commentPhotoPreview);
           next.delete(itemIndex);
         }
         return next;
@@ -100,9 +116,14 @@ export function ChecklistInstanceDetail({
     [],
   );
 
-  /** 변경된 리뷰만 서버로 전송 (result가 없는 항목은 스킵) */
+  /** 변경된 리뷰만 서버로 전송 (사진 먼저 업로드, 그 다음 리뷰 저장) */
   const handleSave = useCallback(async () => {
-    const changes: { itemIndex: number; result: string }[] = [];
+    const changes: {
+      itemIndex: number;
+      result: string;
+      comment_text?: string;
+      comment_photo_url?: string;
+    }[] = [];
 
     for (const [itemIndex, local] of localReviews) {
       if (!local.result) continue;
@@ -110,8 +131,16 @@ export function ChecklistInstanceDetail({
       const item = snapshot.find((s) => s.item_index === itemIndex);
       const existing = item?.review;
 
-      if (!existing || existing.result !== local.result) {
-        changes.push({ itemIndex, result: local.result });
+      const hasResultChange = !existing || existing.result !== local.result;
+      const hasComment = !!local.commentText || !!local.commentPhotoFile;
+
+      if (hasResultChange || hasComment) {
+        changes.push({
+          itemIndex,
+          result: local.result,
+          comment_text: local.commentText,
+          // photo URL will be filled after upload
+        });
       }
     }
 
@@ -123,11 +152,31 @@ export function ChecklistInstanceDetail({
 
     setIsSaving(true);
     try {
+      // 1. Upload comment photos first
+      for (const ch of changes) {
+        const local = localReviews.get(ch.itemIndex);
+        if (local?.commentPhotoFile) {
+          const { upload_url, file_url } = await presignedUrl.mutateAsync({
+            filename: local.commentPhotoFile.name,
+            content_type: local.commentPhotoFile.type,
+          });
+          await fetch(upload_url, {
+            method: "PUT",
+            body: local.commentPhotoFile,
+            headers: { "Content-Type": local.commentPhotoFile.type },
+          });
+          ch.comment_photo_url = file_url;
+        }
+      }
+
+      // 2. Save reviews sequentially
       for (const ch of changes) {
         await upsertReview.mutateAsync({
           instanceId: instance.id,
           itemIndex: ch.itemIndex,
           result: ch.result,
+          comment_text: ch.comment_text,
+          comment_photo_url: ch.comment_photo_url,
         });
       }
       toast({ type: "success", message: `${changes.length} review(s) saved.` });
@@ -137,9 +186,9 @@ export function ChecklistInstanceDetail({
     } finally {
       setIsSaving(false);
     }
-  }, [localReviews, snapshot, instance.id, upsertReview, toast, exitReviewMode]);
+  }, [localReviews, snapshot, instance.id, upsertReview, presignedUrl, toast, exitReviewMode]);
 
-  const hasAnyEvidence = evidenceSummary.photos > 0 || evidenceSummary.notes > 0 || evidenceSummary.reviewed > 0 || evidenceSummary.missing > 0;
+  const hasAnyEvidence = evidenceSummary.photos > 0 || evidenceSummary.notes > 0 || evidenceSummary.reviewed > 0 || evidenceSummary.missing > 0 || evidenceSummary.pendingReReview > 0;
 
   return (
     <div>
@@ -202,6 +251,12 @@ export function ChecklistInstanceDetail({
               <span className="flex items-center gap-1.5 text-xs text-text-secondary">
                 <CheckCircle size={13} className="text-success" />
                 {evidenceSummary.reviewed}
+              </span>
+            )}
+            {evidenceSummary.pendingReReview > 0 && (
+              <span className="flex items-center gap-1.5 text-xs text-text-secondary">
+                <RotateCcw size={13} className="text-accent" />
+                {evidenceSummary.pendingReReview} 재검토
               </span>
             )}
             {evidenceSummary.missing > 0 && (

@@ -4,12 +4,12 @@
  * 체크리스트 아이템 행 컴포넌트.
  *
  * - 기본 모드: completion 상태 + 리뷰 뱃지 + 말풍선 아이콘(항상, 콘텐츠 수 뱃지)
- * - 리뷰 모드: O/△/X 버튼만 (콘텐츠는 채팅 모달에서)
+ * - 리뷰 모드: O/△/X 버튼 + 인라인 코멘트 입력
  * - 자체 저장 없음 — 부모가 batch save 처리
  */
 
-import React, { useState } from "react";
-import { Check, X, Clock, Camera, FileText, MapPin, MessageCircle, Film } from "lucide-react";
+import React, { useState, useRef } from "react";
+import { Check, X, Clock, Camera, FileText, MapPin, MessageCircle, Film, Paperclip } from "lucide-react";
 import { Badge, Lightbox } from "@/components/ui";
 import { cn, formatActionTime } from "@/lib/utils";
 import { ReviewChatModal } from "./ReviewChatModal";
@@ -17,6 +17,9 @@ import type { ChecklistInstanceSnapshotItem } from "@/types";
 
 export interface LocalReview {
   result: string;
+  commentText?: string;
+  commentPhotoFile?: File;
+  commentPhotoPreview?: string;
 }
 
 interface ChecklistItemRowProps {
@@ -56,8 +59,11 @@ export function ChecklistItemRow({
   const [isLightboxOpen, setIsLightboxOpen] = useState(false);
   const [isNoteExpanded, setIsNoteExpanded] = useState(false);
   const [isChatOpen, setIsChatOpen] = useState(false);
+  const [showComment, setShowComment] = useState(false);
+  const commentFileRef = useRef<HTMLInputElement>(null);
   const review = item.review;
   const contentsCount = review?.contents?.length ?? 0;
+  const hasHistory = (review?.history?.length ?? 0) > 0 || (item.completion_history?.length ?? 0) > 0;
 
   const noteExpanded = expandAllNotes || isNoteExpanded;
   const noteTruncated = item.note && item.note.length > NOTE_TRUNCATE_LENGTH;
@@ -67,7 +73,23 @@ export function ChecklistItemRow({
     if (localReview?.result === result) {
       onReviewChange(null);
     } else {
-      onReviewChange({ result });
+      onReviewChange({ ...localReview, result });
+    }
+  };
+
+  const handleCommentTextChange = (text: string) => {
+    if (!onReviewChange || !localReview) return;
+    onReviewChange({ ...localReview, commentText: text || undefined });
+  };
+
+  const handleCommentPhotoChange = (file: File | null) => {
+    if (!onReviewChange || !localReview) return;
+    if (file) {
+      const preview = URL.createObjectURL(file);
+      onReviewChange({ ...localReview, commentPhotoFile: file, commentPhotoPreview: preview });
+    } else {
+      if (localReview.commentPhotoPreview) URL.revokeObjectURL(localReview.commentPhotoPreview);
+      onReviewChange({ ...localReview, commentPhotoFile: undefined, commentPhotoPreview: undefined });
     }
   };
 
@@ -75,6 +97,9 @@ export function ChecklistItemRow({
   const hasNote = !!item.note;
   const hasBothEvidence = hasPhoto && hasNote;
   const needsEvidence = !isCompleted && item.verification_type !== "none";
+
+  // pending_re_review or has history/completion_history → show chat button
+  const showChatButton = !reviewMode && (review || hasHistory);
 
   return (
     <div
@@ -107,14 +132,30 @@ export function ChecklistItemRow({
           {!reviewMode && review && (
             <Badge
               variant={
-                review.result === "pass" ? "success" : review.result === "fail" ? "danger" : "warning"
+                review.result === "pass"
+                  ? "success"
+                  : review.result === "fail"
+                    ? "danger"
+                    : review.result === "pending_re_review"
+                      ? "accent"
+                      : "warning"
               }
             >
-              {review.result === "pass" ? "O" : review.result === "fail" ? "X" : "△"}
+              {review.result === "pass"
+                ? "O"
+                : review.result === "fail"
+                  ? "X"
+                  : review.result === "pending_re_review"
+                    ? "재검토"
+                    : "△"}
             </Badge>
           )}
-          {/* 말풍선 아이콘 — 리뷰가 있으면 항상 표시, 클릭 시 채팅 모달 */}
-          {!reviewMode && review && (
+          {/* 재제출 횟수 뱃지 */}
+          {!reviewMode && (item.resubmission_count ?? 0) > 0 && (
+            <Badge variant="accent">재제출 {item.resubmission_count}회</Badge>
+          )}
+          {/* 말풍선 아이콘 — 리뷰가 있거나 히스토리가 있으면 표시 */}
+          {showChatButton && (
             <button
               type="button"
               onClick={() => setIsChatOpen(true)}
@@ -235,7 +276,7 @@ export function ChecklistItemRow({
           </div>
         )}
 
-        {/* 리뷰 모드 — O/△/X 버튼만 */}
+        {/* 리뷰 모드 — O/△/X 버튼 + 인라인 코멘트 */}
         {reviewMode && (
           <div className="mt-2 ml-6">
             <div className="flex items-center gap-1.5">
@@ -262,7 +303,73 @@ export function ChecklistItemRow({
                   {opt.label}
                 </button>
               ))}
+              {/* 인라인 코멘트 토글 */}
+              {localReview?.result && (
+                <button
+                  type="button"
+                  onClick={() => setShowComment(!showComment)}
+                  className={cn(
+                    "w-7 h-7 rounded-md text-xs border flex items-center justify-center transition-colors",
+                    showComment || localReview.commentText || localReview.commentPhotoFile
+                      ? "bg-accent/20 text-accent border-accent/40"
+                      : "border-border text-text-muted hover:text-accent hover:border-accent/40",
+                  )}
+                  title="Add comment"
+                >
+                  <MessageCircle size={13} />
+                </button>
+              )}
             </div>
+
+            {/* 인라인 코멘트 영역 */}
+            {showComment && localReview?.result && (
+              <div className="mt-2 border border-border rounded-lg p-2 bg-surface/50 space-y-2">
+                <div className="flex items-start gap-2">
+                  <button
+                    type="button"
+                    onClick={() => commentFileRef.current?.click()}
+                    className="p-1.5 rounded text-text-muted hover:text-accent hover:bg-surface-hover transition-colors flex-shrink-0"
+                    title="Attach photo"
+                  >
+                    <Paperclip size={14} />
+                  </button>
+                  <input
+                    ref={commentFileRef}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0] ?? null;
+                      handleCommentPhotoChange(file);
+                      if (commentFileRef.current) commentFileRef.current.value = "";
+                    }}
+                  />
+                  <input
+                    type="text"
+                    placeholder="Comment..."
+                    value={localReview.commentText ?? ""}
+                    onChange={(e) => handleCommentTextChange(e.target.value)}
+                    className="flex-1 bg-transparent border-none text-sm text-text placeholder:text-text-muted outline-none"
+                  />
+                </div>
+                {localReview.commentPhotoPreview && (
+                  <div className="relative inline-block">
+                    <img
+                      src={localReview.commentPhotoPreview}
+                      alt="Comment attachment"
+                      className="w-16 h-16 object-cover rounded border border-border"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => handleCommentPhotoChange(null)}
+                      className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-danger text-white flex items-center justify-center"
+                    >
+                      <X size={10} />
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -277,16 +384,21 @@ export function ChecklistItemRow({
         />
       )}
 
-      {/* 채팅 모달 */}
-      {review && (
+      {/* 채팅 모달 — 통합 타임라인 */}
+      {showChatButton && (
         <ReviewChatModal
           isOpen={isChatOpen}
           onClose={() => setIsChatOpen(false)}
           instanceId={instanceId}
           itemIndex={item.item_index}
           itemTitle={item.title}
-          reviewResult={review.result}
-          contents={review.contents ?? []}
+          reviewResult={review?.result ?? null}
+          contents={review?.contents ?? []}
+          reviewHistory={review?.history ?? []}
+          completionHistory={item.completion_history ?? []}
+          completedAt={item.completed_at ?? null}
+          photoUrl={item.photo_url ?? null}
+          note={item.note ?? null}
         />
       )}
     </div>
