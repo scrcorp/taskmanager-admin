@@ -55,7 +55,6 @@ const navItems: NavItem[] = [
       { href: "/schedules/list", label: "List", icon: List },
       { href: "/schedules/completion-log", label: "Logs", icon: FileSearch, indent: true },
       { href: "/attendances", label: "Attendance", icon: Clock },
-      { href: "/schedules/manage", label: "Manage", icon: Settings },
     ],
   },
   { href: "/checklists", label: "Checklists", icon: CheckSquare },
@@ -131,7 +130,6 @@ export function Sidebar({ onNavClick }: { onNavClick?: () => void }) {
   const getChildHref = (href: string): string => {
     if (href === "/schedules/list") return `/schedules/list?from=${currentWeek.from}&to=${currentWeek.to}`;
     if (href === "/schedules/completion-log") return `/schedules/completion-log?from=${currentWeek.from}&to=${currentWeek.to}`;
-    if (href === "/schedules/manage") return `/schedules/manage?week=${currentWeek.from}`;
     if (href === "/attendances") return `/attendances?from=${currentWeek.from}&to=${currentWeek.to}`;
     return href;
   };

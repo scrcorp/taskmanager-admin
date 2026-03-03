@@ -1497,15 +1497,19 @@ export default function SchedulesPage(): React.ReactElement {
             List
           </Button>
 
-          <Button
-            variant="secondary"
-            size="md"
-            onClick={() => router.push("/schedules/manage")}
-            disabled
-          >
-            <Settings size={16} />
-            Manage
-          </Button>
+          <div className="relative group">
+            <Button
+              variant="secondary"
+              size="md"
+              disabled
+            >
+              <Settings size={16} />
+              Manage
+            </Button>
+            <span className="absolute -bottom-8 left-1/2 -translate-x-1/2 px-2 py-1 text-xs text-white bg-text rounded-md whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+              Coming Soon
+            </span>
+          </div>
         </div>
       </div>
 
