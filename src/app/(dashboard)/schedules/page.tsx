@@ -1374,7 +1374,7 @@ function MonthView({
 export default function SchedulesPage(): React.ReactElement {
   const router = useRouter();
 
-  const [viewMode, setViewMode] = useState<ViewMode>("week");
+  const [viewMode, setViewMode] = useState<ViewMode>("day");
   const [selectedDate, setSelectedDate] = useState<string>(
     () => new Date().toISOString().split("T")[0],
   );
@@ -1501,6 +1501,7 @@ export default function SchedulesPage(): React.ReactElement {
             variant="secondary"
             size="md"
             onClick={() => router.push("/schedules/manage")}
+            disabled
           >
             <Settings size={16} />
             Manage
