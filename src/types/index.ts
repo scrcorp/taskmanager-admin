@@ -475,6 +475,28 @@ export interface ChecklistInstance {
   template_title?: string;
 }
 
+/** 리뷰 결과 변경 히스토리 항목.
+ * Review result change history item. */
+export interface ReviewHistoryItem {
+  id: string;
+  changed_by: string;
+  changed_by_name: string | null;
+  old_result: string | null;
+  new_result: string;
+  created_at: string;
+}
+
+/** 완료 히스토리 (재제출 아카이브) 항목.
+ * Completion history item — archived evidence from resubmission. */
+export interface CompletionHistoryItem {
+  id: string;
+  photo_url: string | null;
+  note: string | null;
+  location: { lat: number; lng: number } | null;
+  submitted_at: string;
+  created_at: string;
+}
+
 export interface ChecklistInstanceSnapshotItem {
   item_index: number;
   title: string;
@@ -488,12 +510,15 @@ export interface ChecklistInstanceSnapshotItem {
   photo_url?: string | null;
   note?: string | null;
   location?: { lat: number; lng: number } | null;
+  resubmission_count?: number;
+  completion_history?: CompletionHistoryItem[];
   review?: {
     id: string;
     reviewer_id: string;
     reviewer_name: string | null;
-    result: "pass" | "fail" | "caution";
+    result: "pass" | "fail" | "caution" | "pending_re_review";
     contents: ReviewContent[];
+    history: ReviewHistoryItem[];
     created_at: string;
     updated_at: string;
   } | null;
@@ -519,8 +544,9 @@ export interface ChecklistItemReview {
   item_index: number;
   reviewer_id: string;
   reviewer_name: string | null;
-  result: "pass" | "fail" | "caution";
+  result: "pass" | "fail" | "caution" | "pending_re_review";
   contents: ReviewContent[];
+  history: ReviewHistoryItem[];
   created_at: string;
   updated_at: string;
 }

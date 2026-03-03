@@ -74,22 +74,39 @@ export const useChecklistInstance = (
 export function useUpsertItemReview(): UseMutationResult<
   ChecklistItemReview,
   Error,
-  { instanceId: string; itemIndex: number; result: string }
+  {
+    instanceId: string;
+    itemIndex: number;
+    result: string;
+    comment_text?: string;
+    comment_photo_url?: string;
+  }
 > {
   const queryClient = useQueryClient();
   return useMutation<
     ChecklistItemReview,
     Error,
-    { instanceId: string; itemIndex: number; result: string }
+    {
+      instanceId: string;
+      itemIndex: number;
+      result: string;
+      comment_text?: string;
+      comment_photo_url?: string;
+    }
   >({
     mutationFn: async ({
       instanceId,
       itemIndex,
       result,
+      comment_text,
+      comment_photo_url,
     }): Promise<ChecklistItemReview> => {
+      const body: Record<string, string> = { result };
+      if (comment_text) body.comment_text = comment_text;
+      if (comment_photo_url) body.comment_photo_url = comment_photo_url;
       const response: AxiosResponse<ChecklistItemReview> = await api.put(
         `/admin/checklist-instances/${instanceId}/items/${itemIndex}/review`,
-        { result },
+        body,
       );
       return response.data;
     },
