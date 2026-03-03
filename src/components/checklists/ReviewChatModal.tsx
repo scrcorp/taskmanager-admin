@@ -220,9 +220,9 @@ export function ReviewChatModal({
         {timeline.map((event, i) => {
           if (event.type === "initial_completion") {
             return (
-              <div key={`init-${i}`} className="flex justify-center">
-                <div className="bg-success-muted rounded-lg px-4 py-2 max-w-[85%] text-center">
-                  <div className="flex items-center justify-center gap-1.5 text-xs text-success mb-1">
+              <div key={`init-${i}`} className="flex justify-start">
+                <div className="bg-success-muted rounded-lg px-4 py-2 max-w-[80%]">
+                  <div className="flex items-center gap-1.5 text-xs text-success mb-1">
                     <CheckCircle size={12} />
                     <span className="font-medium">Completed</span>
                   </div>
@@ -240,7 +240,7 @@ export function ReviewChatModal({
                   {event.note && (
                     <p className="text-xs text-text-secondary mt-1 break-words">{event.note}</p>
                   )}
-                  <p className="text-[10px] text-text-muted mt-1">{formatChatTime(event.created_at)}</p>
+                  <p className="text-[10px] text-text-muted mt-1 text-right">{formatChatTime(event.created_at)}</p>
                 </div>
               </div>
             );
@@ -315,9 +315,9 @@ export function ReviewChatModal({
           if (event.type === "resubmission") {
             const ch = event.data;
             return (
-              <div key={`rs-${ch.id}`} className="flex justify-center">
-                <div className="bg-accent-muted rounded-lg px-4 py-2 max-w-[85%] text-center">
-                  <div className="flex items-center justify-center gap-1.5 text-xs text-accent mb-1">
+              <div key={`rs-${ch.id}`} className="flex justify-start">
+                <div className="bg-accent-muted rounded-lg px-4 py-2 max-w-[80%]">
+                  <div className="flex items-center gap-1.5 text-xs text-accent mb-1">
                     <RotateCcw size={12} />
                     <span className="font-medium">Resubmitted</span>
                   </div>
@@ -336,7 +336,7 @@ export function ReviewChatModal({
                   {ch.note && (
                     <p className="text-xs text-text-muted line-through break-words">{ch.note}</p>
                   )}
-                  <p className="text-[10px] text-text-muted mt-1">{formatChatTime(ch.created_at)}</p>
+                  <p className="text-[10px] text-text-muted mt-1 text-right">{formatChatTime(ch.created_at)}</p>
                 </div>
               </div>
             );
