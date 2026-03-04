@@ -13,12 +13,7 @@ import { useDailyReports } from "@/hooks/useDailyReports";
 import { useStores } from "@/hooks/useStores";
 import { Button, Card, Badge, ClearButton, LoadingSpinner, Pagination } from "@/components/ui";
 import type { DailyReport, Store } from "@/types";
-import { cn, formatFixedDate } from "@/lib/utils";
-
-const statusTabs: { key: string; label: string }[] = [
-  { key: "all", label: "All" },
-  { key: "submitted", label: "Submitted" },
-];
+import { formatFixedDate } from "@/lib/utils";
 
 const periodOptions: { value: string; label: string }[] = [
   { value: "", label: "All Periods" },
@@ -27,7 +22,6 @@ const periodOptions: { value: string; label: string }[] = [
 ];
 
 const statusBadge: Record<string, { label: string; variant: "success" | "warning" | "default" }> = {
-  draft: { label: "Draft", variant: "warning" },
   submitted: { label: "Submitted", variant: "success" },
 };
 
@@ -42,7 +36,6 @@ function DailyReportsContent(): React.ReactElement {
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  const [activeTab, setActiveTab] = useState<string>("all");
   const [selectedStoreId, setSelectedStoreId] = useState<string>("");
   const [selectedPeriod, setSelectedPeriod] = useState<string>("");
   const [dateFrom, setDateFrom] = useState<string>(() => searchParams.get("from") ?? "");
@@ -55,7 +48,7 @@ function DailyReportsContent(): React.ReactElement {
     date_from: dateFrom || undefined,
     date_to: dateTo || undefined,
     period: selectedPeriod || undefined,
-    status: activeTab !== "all" ? activeTab : undefined,
+    status: "submitted",
     page,
     per_page: PER_PAGE,
   });
@@ -134,28 +127,6 @@ function DailyReportsContent(): React.ReactElement {
         {(dateFrom || dateTo) && (
           <ClearButton onClick={() => { setDateFrom(""); setDateTo(""); setPage(1); }} />
         )}
-      </div>
-
-      {/* Status tabs */}
-      <div className="flex items-center gap-1 mb-4 p-1 bg-surface rounded-lg border border-border w-full md:w-fit overflow-x-auto">
-        {statusTabs.map((tab) => (
-          <button
-            key={tab.key}
-            type="button"
-            onClick={() => {
-              setActiveTab(tab.key);
-              setPage(1);
-            }}
-            className={cn(
-              "px-4 py-1.5 text-sm font-medium rounded-md transition-colors",
-              activeTab === tab.key
-                ? "bg-accent text-white"
-                : "text-text-secondary hover:text-text hover:bg-surface-hover",
-            )}
-          >
-            {tab.label}
-          </button>
-        ))}
       </div>
 
       {/* Report list */}
