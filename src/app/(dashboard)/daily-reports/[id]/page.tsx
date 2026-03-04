@@ -8,9 +8,9 @@
 
 import React, { useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ChevronLeft, MapPin, User, Calendar, Clock, Send } from "lucide-react";
-import { useDailyReport, useAddDailyReportComment } from "@/hooks/useDailyReports";
-import { Button, Card, Badge, LoadingSpinner, EmptyState } from "@/components/ui";
+import { ChevronLeft, MapPin, User, Calendar, Clock, Send, Trash2 } from "lucide-react";
+import { useDailyReport, useAddDailyReportComment, useDeleteDailyReport } from "@/hooks/useDailyReports";
+import { Button, Card, Badge, LoadingSpinner, EmptyState, ConfirmDialog } from "@/components/ui";
 import { useToast } from "@/components/ui/Toast";
 import { formatDate, formatFixedDate, parseApiError } from "@/lib/utils";
 import type { DailyReportSection, DailyReportComment } from "@/types";
@@ -33,8 +33,10 @@ export default function DailyReportDetailPage(): React.ReactElement {
   const reportId: string = params.id as string;
   const { data: report, isLoading } = useDailyReport(reportId);
   const addComment = useAddDailyReportComment();
+  const deleteMutation = useDeleteDailyReport();
 
   const [commentText, setCommentText] = useState<string>("");
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   const handleAddComment = useCallback(async () => {
     if (!commentText.trim()) return;
@@ -46,6 +48,16 @@ export default function DailyReportDetailPage(): React.ReactElement {
       toast({ type: "error", message: parseApiError(err, "Failed to add comment") });
     }
   }, [reportId, commentText, addComment, toast]);
+
+  const handleDelete = useCallback(async () => {
+    try {
+      await deleteMutation.mutateAsync(reportId);
+      toast({ type: "success", message: "Report deleted" });
+      router.push("/daily-reports");
+    } catch (err) {
+      toast({ type: "error", message: parseApiError(err, "Failed to delete report") });
+    }
+  }, [reportId, deleteMutation, toast, router]);
 
   if (isLoading) {
     return (
@@ -105,6 +117,14 @@ export default function DailyReportDetailPage(): React.ReactElement {
               <Badge variant={sBadge.variant}>{sBadge.label}</Badge>
             </div>
           </div>
+          <Button
+            variant="danger"
+            size="sm"
+            onClick={() => setShowDeleteConfirm(true)}
+          >
+            <Trash2 size={14} className="mr-1" />
+            Delete
+          </Button>
         </div>
 
         <div className="border-t border-border pt-4 space-y-2">
@@ -210,6 +230,17 @@ export default function DailyReportDetailPage(): React.ReactElement {
           </Button>
         </div>
       </Card>
+
+      {/* Delete confirm */}
+      <ConfirmDialog
+        isOpen={showDeleteConfirm}
+        onClose={() => setShowDeleteConfirm(false)}
+        onConfirm={handleDelete}
+        title="Delete Report"
+        message="Are you sure you want to delete this daily report? This action cannot be undone."
+        confirmLabel="Delete"
+        isLoading={deleteMutation.isPending}
+      />
     </div>
   );
 }
