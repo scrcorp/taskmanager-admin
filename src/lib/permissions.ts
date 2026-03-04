@@ -38,6 +38,10 @@ export const PERMISSIONS = {
   TASKS_READ: "tasks:read",
   TASKS_UPDATE: "tasks:update",
   TASKS_DELETE: "tasks:delete",
+  DAILY_REPORTS_CREATE: "daily_reports:create",
+  DAILY_REPORTS_READ: "daily_reports:read",
+  DAILY_REPORTS_UPDATE: "daily_reports:update",
+  DAILY_REPORTS_DELETE: "daily_reports:delete",
   DASHBOARD_READ: "dashboard:read",
   AUDIT_LOG_READ: "completion_log:read",
 } as const;

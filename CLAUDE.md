@@ -271,6 +271,15 @@ npm start
 npm run lint
 ```
 
+## Git Workflow
+
+> 상세 규칙은 `../CLAUDE.md`의 "Git Branch Workflow" 참조.
+
+- 브랜치 prefix: `feat/*`, `fix/*`, `docs/*`, `refactor/*`, `chore/*` (업무 성격에 맞게)
+- **dev 머지는 반드시 사용자 허락 후 진행**
+- docs 같은 경량 작업은 main에서 직접 분기 허용
+- **AI Agent는 작업 시 무조건 worktree 사용**
+
 ## Coding Conventions
 
 - Use Server Components by default, `"use client"` only when needed

@@ -762,6 +762,94 @@ export interface EvaluationFilters {
   per_page?: number;
 }
 
+// Daily Report
+export interface DailyReport {
+  id: string;
+  organization_id: string;
+  store_id: string;
+  store_name: string | null;
+  template_id: string | null;
+  author_id: string;
+  author_name: string | null;
+  report_date: string;
+  period: string;
+  status: string;
+  submitted_at: string | null;
+  created_at: string;
+  updated_at: string;
+  comment_count: number;
+  sections: DailyReportSection[];
+  comments: DailyReportComment[];
+}
+
+export interface DailyReportSection {
+  title: string;
+  description: string | null;
+  content: string | null;
+  sort_order: number;
+  is_required: boolean;
+}
+
+export interface DailyReportComment {
+  id: string;
+  user_id: string;
+  user_name: string | null;
+  content: string;
+  created_at: string;
+}
+
+export interface DailyReportFilters {
+  store_id?: string;
+  date_from?: string;
+  date_to?: string;
+  period?: string;
+  status?: string;
+  page?: number;
+  per_page?: number;
+}
+
+// Daily Report Template
+/** 일일 보고서 템플릿 응답 타입.
+ * Daily report template response type. */
+export interface DailyReportTemplate {
+  id: string;
+  organization_id: string;
+  store_id: string | null;
+  name: string;
+  is_default: boolean;
+  is_active: boolean;
+  created_at: string;
+  sections: DailyReportTemplateSection[];
+}
+
+/** 일일 보고서 템플릿 섹션.
+ * Daily report template section. */
+export interface DailyReportTemplateSection {
+  id: string;
+  title: string;
+  description: string | null;
+  sort_order: number;
+  is_required: boolean;
+}
+
+/** 일일 보고서 템플릿 생성 요청 타입.
+ * Daily report template creation request payload. */
+export interface DailyReportTemplateCreate {
+  name: string;
+  store_id?: string | null;
+  is_default?: boolean;
+  sections: { title: string; description?: string | null; sort_order: number; is_required: boolean }[];
+}
+
+/** 일일 보고서 템플릿 수정 요청 타입.
+ * Daily report template update request payload (partial). */
+export interface DailyReportTemplateUpdate {
+  name?: string;
+  is_default?: boolean;
+  is_active?: boolean;
+  sections?: { title: string; description?: string | null; sort_order: number; is_required: boolean }[];
+}
+
 // Common
 export interface PaginatedResponse<T> {
   items: T[];

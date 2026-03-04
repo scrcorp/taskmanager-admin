@@ -142,3 +142,9 @@ export {
 export { useCompletionLog } from "./useCompletionLog";
 
 export { useOvertimeAlerts } from "./useOvertimeAlerts";
+
+export {
+  useDailyReports,
+  useDailyReport,
+  useAddDailyReportComment,
+} from "./useDailyReports";

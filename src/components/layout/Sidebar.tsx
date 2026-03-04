@@ -20,6 +20,7 @@ import {
   List,
   Settings,
   FileSearch,
+  FileText,
   X,
 } from "lucide-react";
 import React, { useState, useEffect, useMemo, useCallback } from "react";
@@ -61,6 +62,14 @@ const navItems: NavItem[] = [
   { href: "/tasks", label: "Tasks", icon: Zap },
   { href: "/announcements", label: "Notices", icon: Megaphone },
   { href: "/evaluations", label: "Evaluations", icon: Star },
+  {
+    href: "/daily-reports",
+    label: "Daily Reports",
+    icon: FileText,
+    children: [
+      { href: "/daily-reports/templates", label: "Templates", icon: Settings },
+    ],
+  },
   { href: "/notifications", label: "Alerts", icon: Bell },
 ];
 
