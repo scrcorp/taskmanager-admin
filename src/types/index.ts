@@ -807,6 +807,48 @@ export interface DailyReportFilters {
   per_page?: number;
 }
 
+// Daily Report Template
+/** 일일 보고서 템플릿 응답 타입.
+ * Daily report template response type. */
+export interface DailyReportTemplate {
+  id: string;
+  organization_id: string;
+  store_id: string | null;
+  name: string;
+  is_default: boolean;
+  is_active: boolean;
+  created_at: string;
+  sections: DailyReportTemplateSection[];
+}
+
+/** 일일 보고서 템플릿 섹션.
+ * Daily report template section. */
+export interface DailyReportTemplateSection {
+  id: string;
+  title: string;
+  description: string | null;
+  sort_order: number;
+  is_required: boolean;
+}
+
+/** 일일 보고서 템플릿 생성 요청 타입.
+ * Daily report template creation request payload. */
+export interface DailyReportTemplateCreate {
+  name: string;
+  store_id?: string | null;
+  is_default?: boolean;
+  sections: { title: string; description?: string | null; sort_order: number; is_required: boolean }[];
+}
+
+/** 일일 보고서 템플릿 수정 요청 타입.
+ * Daily report template update request payload (partial). */
+export interface DailyReportTemplateUpdate {
+  name?: string;
+  is_default?: boolean;
+  is_active?: boolean;
+  sections?: { title: string; description?: string | null; sort_order: number; is_required: boolean }[];
+}
+
 // Common
 export interface PaginatedResponse<T> {
   items: T[];
