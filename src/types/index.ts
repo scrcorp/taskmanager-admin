@@ -762,6 +762,51 @@ export interface EvaluationFilters {
   per_page?: number;
 }
 
+// Daily Report
+export interface DailyReport {
+  id: string;
+  organization_id: string;
+  store_id: string;
+  store_name: string | null;
+  template_id: string | null;
+  author_id: string;
+  author_name: string | null;
+  report_date: string;
+  period: string;
+  status: string;
+  submitted_at: string | null;
+  created_at: string;
+  updated_at: string;
+  sections: DailyReportSection[];
+  comments: DailyReportComment[];
+}
+
+export interface DailyReportSection {
+  id: string;
+  template_section_id: string | null;
+  title: string;
+  content: string | null;
+  sort_order: number;
+}
+
+export interface DailyReportComment {
+  id: string;
+  user_id: string;
+  user_name: string | null;
+  content: string;
+  created_at: string;
+}
+
+export interface DailyReportFilters {
+  store_id?: string;
+  date_from?: string;
+  date_to?: string;
+  period?: string;
+  status?: string;
+  page?: number;
+  per_page?: number;
+}
+
 // Common
 export interface PaginatedResponse<T> {
   items: T[];
