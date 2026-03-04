@@ -1,3 +1,14 @@
+/**
+ * useTasks 훅 테스트 — 추가 업무(additional_tasks) CRUD 검증.
+ *
+ * 테스트 범위:
+ * - useTasks: 필터 없이/있는 목록 조회 (우선순위, 상태 필터)
+ * - useTask: 단건 업무 상세 조회
+ * - useCreateTask: 업무 생성 (POST)
+ * - useUpdateTask: 업무 수정 (PUT)
+ * - useDeleteTask: 업무 삭제 (DELETE)
+ */
+
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";

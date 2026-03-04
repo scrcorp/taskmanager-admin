@@ -1,3 +1,15 @@
+/**
+ * useUsers 훅 테스트 — 직원 CRUD + 매장 배정 관리 검증.
+ *
+ * 테스트 범위:
+ * - useUsers: 필터 없이/있는 직원 목록 조회
+ * - useUser: 단건 직원 상세 조회 + id 미지정 시 비활성화
+ * - useCreateUser/useUpdateUser/useDeleteUser: 직원 CRUD
+ * - useToggleUserActive: 직원 활성/비활성 토글 (PATCH)
+ * - useUserStores: 직원 소속 매장 조회
+ * - useAddUserStore/useRemoveUserStore: 직원 매장 배정/해제
+ */
+
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";

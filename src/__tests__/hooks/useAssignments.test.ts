@@ -1,3 +1,14 @@
+/**
+ * useAssignments 훅 테스트 — 근무 배정 CRUD + 일괄 생성 검증.
+ *
+ * 테스트 범위:
+ * - useAssignments: 필터 없이/있는 페이지네이션 배정 목록 조회
+ * - useAssignment: 단건 배정 상세 조회 (체크리스트 스냅샷 포함)
+ * - useCreateAssignment: 배정 생성 (POST)
+ * - useBulkCreateAssignments: 다중 사용자 일괄 배정 생성 (POST /bulk)
+ * - useDeleteAssignment: 배정 삭제 (DELETE)
+ */
+
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";

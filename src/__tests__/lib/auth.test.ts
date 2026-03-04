@@ -1,3 +1,12 @@
+/**
+ * auth 유틸리티 테스트 — 토큰 관리 + 회사 코드 관리 검증.
+ *
+ * 테스트 범위:
+ * - 토큰 저장/조회/삭제 (localStorage 기반)
+ * - isAuthenticated 인증 상태 판별
+ * - 회사 코드 저장(대문자 변환)/조회/유효성(6자리) 확인
+ */
+
 import { describe, it, expect, beforeEach } from "vitest";
 import {
   getAccessToken,

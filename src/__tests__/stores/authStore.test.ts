@@ -1,7 +1,18 @@
+/**
+ * authStore 테스트 — Zustand 인증 스토어 동작 검증.
+ *
+ * 테스트 범위:
+ * - 초기 상태 (user: null, isLoading: false)
+ * - login: API 호출 → 토큰 저장 → 사용자 정보 조회 → 상태 업데이트
+ * - login 실패: 에러 throw + isLoading false 복원
+ * - logout: 사용자 정보 + 토큰 초기화
+ * - fetchMe: 사용자 정보 조회 성공/실패 시 상태 업데이트
+ */
+
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { useAuthStore } from "@/stores/authStore";
 
-// Mock api module
+// API 모듈 모킹 — post(login), get(fetchMe) 사용
 vi.mock("@/lib/api", () => ({
   default: {
     post: vi.fn(),

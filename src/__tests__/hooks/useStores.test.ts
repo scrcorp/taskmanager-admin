@@ -1,3 +1,12 @@
+/**
+ * useStores 훅 테스트 — 매장 목록 조회/생성/삭제 검증.
+ *
+ * 테스트 범위:
+ * - useStores: 매장 목록 조회 성공/에러 처리
+ * - useCreateStore: 매장 생성 (POST) + 반환 데이터 확인
+ * - useDeleteStore: 매장 삭제 (DELETE)
+ */
+
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -5,7 +14,7 @@ import { createElement, type ReactNode } from "react";
 import { useStores, useCreateStore, useDeleteStore } from "@/hooks/useStores";
 import type { Store } from "@/types";
 
-// Mock api module
+// API 모듈 모킹
 vi.mock("@/lib/api", () => ({
   default: {
     get: vi.fn(),

@@ -1,3 +1,13 @@
+/**
+ * useRoles 훅 테스트 — 역할 CRUD 검증.
+ *
+ * 테스트 범위:
+ * - useRoles: 역할 목록 조회
+ * - useCreateRole: 역할 생성 (POST, name + priority)
+ * - useUpdateRole: 역할 수정 (PUT)
+ * - useDeleteRole: 역할 삭제 (DELETE)
+ */
+
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";

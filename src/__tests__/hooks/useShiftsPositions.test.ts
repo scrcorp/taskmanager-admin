@@ -1,3 +1,13 @@
+/**
+ * useShifts + usePositions 훅 테스트 — 교대/직책 CRUD 검증.
+ *
+ * 테스트 범위:
+ * - useShifts: 매장별 교대 목록 조회 + storeId 미지정 시 비활성화
+ * - useCreateShift/useUpdateShift/useDeleteShift: 교대 생성/수정/삭제
+ * - usePositions: 매장별 직책 목록 조회
+ * - useCreatePosition/useUpdatePosition/useDeletePosition: 직책 생성/수정/삭제
+ */
+
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";

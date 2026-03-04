@@ -1,3 +1,14 @@
+/**
+ * useAnnouncements 훅 테스트 — 공지사항 CRUD 검증.
+ *
+ * 테스트 범위:
+ * - useAnnouncements: 페이지네이션 공지 목록 조회
+ * - useAnnouncement: 단건 공지 상세 조회
+ * - useCreateAnnouncement: 공지 생성 (POST)
+ * - useUpdateAnnouncement: 공지 수정 (PUT)
+ * - useDeleteAnnouncement: 공지 삭제 (DELETE)
+ */
+
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";

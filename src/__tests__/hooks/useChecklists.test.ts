@@ -1,3 +1,14 @@
+/**
+ * useChecklists 훅 테스트 — 체크리스트 템플릿 + 항목 CRUD 검증.
+ *
+ * 테스트 범위:
+ * - useChecklistTemplates: 매장별 템플릿 목록 조회 (교대 필터 포함)
+ * - useChecklistTemplate: 단건 템플릿 상세 조회
+ * - useCreateChecklistTemplate/useUpdateChecklistTemplate/useDeleteChecklistTemplate: 템플릿 CRUD
+ * - useChecklistItems: 템플릿별 항목 목록 조회
+ * - useCreateChecklistItem/useUpdateChecklistItem/useDeleteChecklistItem: 항목 CRUD
+ */
+
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";

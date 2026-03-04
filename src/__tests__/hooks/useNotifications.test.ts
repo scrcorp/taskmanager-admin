@@ -1,3 +1,13 @@
+/**
+ * useNotifications 훅 테스트 — 알림 조회/읽음 처리 검증.
+ *
+ * 테스트 범위:
+ * - useNotifications: 페이지네이션 알림 목록 조회
+ * - useUnreadCount: 읽지 않은 알림 수 조회
+ * - useMarkRead: 개별 알림 읽음 처리 (PATCH)
+ * - useMarkAllRead: 전체 알림 읽음 처리 (PATCH)
+ */
+
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
