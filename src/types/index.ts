@@ -783,11 +783,11 @@ export interface DailyReport {
 }
 
 export interface DailyReportSection {
-  id: string;
-  template_section_id: string | null;
   title: string;
+  description: string | null;
   content: string | null;
   sort_order: number;
+  is_required: boolean;
 }
 
 export interface DailyReportComment {

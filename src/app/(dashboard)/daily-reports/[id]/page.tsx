@@ -155,7 +155,7 @@ export default function DailyReportDetailPage(): React.ReactElement {
       {sortedSections.length > 0 ? (
         <div className="space-y-3 mb-4">
           {sortedSections.map((section: DailyReportSection) => (
-            <Card key={section.id}>
+            <Card key={section.sort_order}>
               <h2 className="text-base font-semibold text-text mb-2">
                 {section.title}
               </h2>
