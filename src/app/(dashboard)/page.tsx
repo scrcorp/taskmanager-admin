@@ -241,6 +241,8 @@ export default function DashboardPage(): React.ReactElement {
     const notifCount: number =
       typeof unreadCount === "number" ? unreadCount : 0;
 
+    const checklistCompleted: number = checklistCompletion?.completed ?? 0;
+
     return [
       {
         label: "Total Stores",
@@ -267,6 +269,14 @@ export default function DashboardPage(): React.ReactElement {
         href: "/schedules",
       },
       {
+        label: "Checklist Completed",
+        value: checklistCompleted,
+        icon: <CheckSquare className="h-5 w-5" />,
+        colorClass: "text-emerald-400",
+        bgClass: "bg-emerald-400/10",
+        href: `/checklists/instances?work_date=${today}&status=completed`,
+      },
+      {
         label: "Unread Notifications",
         value: notifCount,
         icon: <Bell className="h-5 w-5" />,
@@ -275,7 +285,7 @@ export default function DashboardPage(): React.ReactElement {
         href: "/notifications",
       },
     ];
-  }, [stores, users, assignmentsData, unreadCount]);
+  }, [stores, users, assignmentsData, unreadCount, checklistCompletion]);
 
   // ─── Overtime alert count ─────────────────────────
   const overtimeAlertUsers = useMemo(() => {
@@ -347,7 +357,7 @@ export default function DashboardPage(): React.ReactElement {
       </div>
 
       {/* Stat Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
         {statCards.map((card: StatCardData) => (
           <button
             key={card.label}
@@ -455,23 +465,15 @@ export default function DashboardPage(): React.ReactElement {
                     {checklistCompletion.total_assignments}
                   </div>
                 </div>
-                <button
-                  type="button"
-                  onClick={() =>
-                    router.push(
-                      `/checklists/instances?work_date=${dateFrom}&status=completed`,
-                    )
-                  }
-                  className="text-left group"
-                >
+                <div>
                   <div className="text-xs text-text-muted">Completed</div>
-                  <div className="text-lg font-bold text-success group-hover:text-success/80 transition-colors">
+                  <div className="text-lg font-bold text-success">
                     {checklistCompletion.completed}
                     <span className="text-text-muted font-normal">
                       {" "}/ {checklistCompletion.total_assignments}
                     </span>
                   </div>
-                </button>
+                </div>
               </div>
             </div>
           )}
