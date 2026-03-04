@@ -1,3 +1,10 @@
+/**
+ * 평가 React Query 훅 모음.
+ *
+ * 평가 템플릿(EvalTemplate)과 평가(Evaluation)의 CRUD를 제공합니다.
+ * 템플릿: 평가 기준 항목을 정의하는 양식
+ * 평가: 특정 직원에 대한 실제 평가 기록
+ */
 import {
   useQuery,
   useMutation,
@@ -16,8 +23,9 @@ import type {
   PaginatedResponse,
 } from "@/types";
 
-// === 템플릿 Hooks ===
+// === 평가 템플릿 훅 ===
 
+/** 평가 템플릿 목록 조회 (페이지네이션) */
 export const useEvalTemplates = (
   page: number = 1,
   perPage: number = 20
@@ -34,6 +42,7 @@ export const useEvalTemplates = (
   });
 };
 
+/** 평가 템플릿 단건 조회 */
 export const useEvalTemplate = (
   templateId: string
 ): UseQueryResult<EvalTemplate, Error> => {
@@ -49,6 +58,7 @@ export const useEvalTemplate = (
   });
 };
 
+/** 평가 템플릿 생성 */
 export const useCreateEvalTemplate = (): UseMutationResult<
   EvalTemplate,
   Error,
@@ -69,6 +79,7 @@ export const useCreateEvalTemplate = (): UseMutationResult<
   });
 };
 
+/** 평가 템플릿 삭제 */
 export const useDeleteEvalTemplate = (): UseMutationResult<
   void,
   Error,
@@ -85,8 +96,9 @@ export const useDeleteEvalTemplate = (): UseMutationResult<
   });
 };
 
-// === 평가 Hooks ===
+// === 평가 기록 훅 ===
 
+/** 평가 목록 조회 (필터 + 페이지네이션) */
 export const useEvaluations = (
   filters: EvaluationFilters = {}
 ): UseQueryResult<PaginatedResponse<Evaluation>, Error> => {
@@ -102,6 +114,7 @@ export const useEvaluations = (
   });
 };
 
+/** 평가 단건 조회 */
 export const useEvaluation = (
   evaluationId: string
 ): UseQueryResult<Evaluation, Error> => {
@@ -117,6 +130,7 @@ export const useEvaluation = (
   });
 };
 
+/** 평가 생성 — 평가자가 피평가자에 대한 평가를 시작 */
 export const useCreateEvaluation = (): UseMutationResult<
   Evaluation,
   Error,
@@ -137,6 +151,7 @@ export const useCreateEvaluation = (): UseMutationResult<
   });
 };
 
+/** 평가 제출 — draft 상태의 평가를 submitted로 변경 */
 export const useSubmitEvaluation = (): UseMutationResult<
   Evaluation,
   Error,

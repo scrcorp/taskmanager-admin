@@ -1,11 +1,15 @@
 /**
- * Labor Law Setting React Query hooks.
+ * 근로기준법 설정 React Query 훅.
+ *
+ * 매장별 근로기준법 설정(주간 최대 근무시간, 일일 초과근무 기준 등)을
+ * 조회하고 생성/수정(upsert)합니다.
  */
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import api from "@/lib/api";
 import type { LaborLawSetting } from "@/types";
 
+/** 매장별 근로기준법 설정 조회 — 설정 없으면 null 반환 */
 export function useLaborLaw(storeId: string) {
   return useQuery<LaborLawSetting | null>({
     queryKey: ["laborLaw", storeId],
@@ -14,6 +18,7 @@ export function useLaborLaw(storeId: string) {
   });
 }
 
+/** 근로기준법 설정 생성/수정 (upsert) — 연방/주/매장별 최대 근무시간 설정 */
 export function useUpsertLaborLaw() {
   const qc = useQueryClient();
   return useMutation({

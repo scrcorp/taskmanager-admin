@@ -1,11 +1,15 @@
 /**
- * Shift Preset React Query hooks.
+ * 근무 프리셋 React Query 훅.
+ *
+ * 매장별 근무 프리셋(시작/종료 시간 템플릿)의 CRUD를 제공합니다.
+ * 스케줄 생성 시 빠른 시간 입력을 위해 사용됩니다.
  */
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import api from "@/lib/api";
 import type { ShiftPreset } from "@/types";
 
+/** 매장별 근무 프리셋 목록 조회 */
 export function useShiftPresets(storeId: string) {
   return useQuery<ShiftPreset[]>({
     queryKey: ["shiftPresets", storeId],
@@ -14,6 +18,7 @@ export function useShiftPresets(storeId: string) {
   });
 }
 
+/** 근무 프리셋 생성 — 근무시간대에 이름, 시작/종료 시간 설정 */
 export function useCreateShiftPreset() {
   const qc = useQueryClient();
   return useMutation({
@@ -29,6 +34,7 @@ export function useCreateShiftPreset() {
   });
 }
 
+/** 근무 프리셋 수정 */
 export function useUpdateShiftPreset() {
   const qc = useQueryClient();
   return useMutation({
@@ -44,6 +50,7 @@ export function useUpdateShiftPreset() {
   });
 }
 
+/** 근무 프리셋 삭제 */
 export function useDeleteShiftPreset() {
   const qc = useQueryClient();
   return useMutation({

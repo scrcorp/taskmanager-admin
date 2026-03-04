@@ -1,10 +1,14 @@
 /**
- * Checklist Completion Log React Query hook.
+ * 체크리스트 완료 로그 React Query 훅.
+ *
+ * 체크리스트 아이템별 완료 기록을 조회합니다.
+ * 매장, 사용자, 날짜 범위로 필터링하고 페이지네이션을 지원합니다.
  */
 
 import { useQuery } from "@tanstack/react-query";
 import api from "@/lib/api";
 
+/** 완료 로그 항목 인터페이스 */
 export interface CompletionLogEntry {
   id: string;
   instance_id: string;
@@ -21,6 +25,7 @@ export interface CompletionLogEntry {
   note: string | null;
 }
 
+/** 완료 로그 필터 조건 */
 interface CompletionLogFilters {
   store_id?: string;
   user_id?: string;
@@ -37,6 +42,7 @@ interface CompletionLogResponse {
   per_page: number;
 }
 
+/** 체크리스트 완료 로그 목록 조회 — 필터 조건에 따라 페이지네이션된 결과 반환 */
 export function useCompletionLog(filters: CompletionLogFilters = {}) {
   const params: Record<string, string | number> = {};
   if (filters.store_id) params.store_id = filters.store_id;
