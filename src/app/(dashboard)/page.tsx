@@ -429,7 +429,7 @@ export default function DashboardPage(): React.ReactElement {
             </div>
             <button
               type="button"
-              onClick={() => router.push("/checklists/instances")}
+              onClick={() => router.push(`/checklists/instances?work_date=${dateFrom}`)}
               className="text-xs text-accent hover:text-accent-light font-medium flex items-center gap-1 transition-colors"
             >
               View All
@@ -455,15 +455,23 @@ export default function DashboardPage(): React.ReactElement {
                     {checklistCompletion.total_assignments}
                   </div>
                 </div>
-                <div>
+                <button
+                  type="button"
+                  onClick={() =>
+                    router.push(
+                      `/checklists/instances?work_date=${dateFrom}&status=completed`,
+                    )
+                  }
+                  className="text-left group"
+                >
                   <div className="text-xs text-text-muted">Completed</div>
-                  <div className="text-lg font-bold text-success">
+                  <div className="text-lg font-bold text-success group-hover:text-success/80 transition-colors">
                     {checklistCompletion.completed}
                     <span className="text-text-muted font-normal">
                       {" "}/ {checklistCompletion.total_assignments}
                     </span>
                   </div>
-                </div>
+                </button>
               </div>
             </div>
           )}

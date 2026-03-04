@@ -5,10 +5,11 @@
  *
  * Checklist instances list page with date, store, and status filters.
  * Shows a table of checklist instances with progress and navigation to detail.
+ * Supports URL query params (work_date, status, store_id) for pre-filtering.
  */
 
-import React, { useState, useCallback } from "react";
-import { useRouter } from "next/navigation";
+import React, { Suspense, useState, useCallback } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useChecklistInstances } from "@/hooks/useChecklistInstances";
 import { useStores } from "@/hooks/useStores";
 import {
@@ -16,19 +17,27 @@ import {
   Select,
   Input,
   Pagination,
+  LoadingSpinner,
 } from "@/components/ui";
 import { ChecklistInstanceTable } from "@/components/checklists/ChecklistInstanceTable";
 import type { ChecklistInstance, Store } from "@/types";
 
 const PER_PAGE: number = 20;
 
-export default function ChecklistInstancesPage(): React.ReactElement {
+function ChecklistInstancesContent(): React.ReactElement {
   const router = useRouter();
+  const searchParams = useSearchParams();
 
-  // -- Filter state --
-  const [filterStoreId, setFilterStoreId] = useState<string>("");
-  const [filterDate, setFilterDate] = useState<string>("");
-  const [filterStatus, setFilterStatus] = useState<string>("");
+  // -- Filter state (initialized from URL query params) --
+  const [filterStoreId, setFilterStoreId] = useState<string>(
+    () => searchParams.get("store_id") ?? "",
+  );
+  const [filterDate, setFilterDate] = useState<string>(
+    () => searchParams.get("work_date") ?? "",
+  );
+  const [filterStatus, setFilterStatus] = useState<string>(
+    () => searchParams.get("status") ?? "",
+  );
   const [page, setPage] = useState<number>(1);
 
   // -- Data hooks --
@@ -148,5 +157,19 @@ export default function ChecklistInstancesPage(): React.ReactElement {
         </div>
       )}
     </div>
+  );
+}
+
+export default function ChecklistInstancesPage(): React.ReactElement {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex items-center justify-center h-64">
+          <LoadingSpinner size="lg" />
+        </div>
+      }
+    >
+      <ChecklistInstancesContent />
+    </Suspense>
   );
 }
