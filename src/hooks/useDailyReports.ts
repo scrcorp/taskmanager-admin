@@ -59,6 +59,19 @@ export const useDailyReport = (
   });
 };
 
+/** 일일 보고서 삭제 */
+export const useDeleteDailyReport = (): UseMutationResult<void, Error, string> => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (reportId: string) => {
+      await api.delete(`/admin/daily-reports/${reportId}`);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["daily-reports"] });
+    },
+  });
+};
+
 /** 일일 보고서 댓글 추가 */
 export const useAddDailyReportComment = (): UseMutationResult<
   DailyReportComment,
