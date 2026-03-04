@@ -17,7 +17,6 @@ import { cn, formatFixedDate } from "@/lib/utils";
 
 const statusTabs: { key: string; label: string }[] = [
   { key: "all", label: "All" },
-  { key: "draft", label: "Draft" },
   { key: "submitted", label: "Submitted" },
 ];
 
