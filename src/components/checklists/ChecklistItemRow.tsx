@@ -28,6 +28,7 @@ interface ChecklistItemRowProps {
   index: number;
   workDate: string;
   instanceId: string;
+  timezone?: string;
   reviewMode?: boolean;
   localReview?: LocalReview | null;
   onReviewChange?: (review: LocalReview | null) => void;
@@ -44,6 +45,7 @@ export function ChecklistItemRow({
   index,
   workDate,
   instanceId,
+  timezone,
   reviewMode = false,
   localReview,
   onReviewChange,
@@ -131,13 +133,13 @@ export function ChecklistItemRow({
                 : review.result === "fail"
                   ? "X"
                   : review.result === "pending_re_review"
-                    ? "재검토"
+                    ? "Re-review"
                     : "△"}
             </Badge>
           )}
           {/* 재제출 횟수 뱃지 */}
           {!reviewMode && (item.resubmission_count ?? 0) > 0 && (
-            <Badge variant="accent">재제출 {item.resubmission_count}회</Badge>
+            <Badge variant="accent">Resubmitted {item.resubmission_count}x</Badge>
           )}
           {/* 말풍선 아이콘 */}
           {showChatButton && (
@@ -165,7 +167,7 @@ export function ChecklistItemRow({
           <div className="mt-1.5 ml-6">
             <div className="flex items-center gap-2 text-xs text-text-muted">
               <Clock size={11} />
-              <span>{formatActionTime(item.completed_at ?? "", workDate)}</span>
+              <span>{formatActionTime(item.completed_at ?? "", workDate, timezone)}</span>
               {item.completed_by_name && (
                 <>
                   <span>by</span>

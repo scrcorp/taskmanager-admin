@@ -29,10 +29,12 @@ const statusLabel: Record<string, string> = {
 
 interface ChecklistInstanceDetailProps {
   instance: ChecklistInstance;
+  timezone?: string;
 }
 
 export function ChecklistInstanceDetail({
   instance,
+  timezone,
 }: ChecklistInstanceDetailProps): React.ReactElement {
   const { toast } = useToast();
   const upsertReview = useUpsertItemReview();
@@ -253,7 +255,7 @@ export function ChecklistInstanceDetail({
             {evidenceSummary.pendingReReview > 0 && (
               <span className="flex items-center gap-1.5 text-xs text-text-secondary">
                 <RotateCcw size={13} className="text-accent" />
-                {evidenceSummary.pendingReReview} 재검토
+                {evidenceSummary.pendingReReview} re-review
               </span>
             )}
             {evidenceSummary.missing > 0 && (
@@ -300,6 +302,7 @@ export function ChecklistInstanceDetail({
                 reviewMode={isReviewMode}
                 localReview={localReviews.get(item.item_index) ?? null}
                 onReviewChange={(r) => handleReviewChange(item.item_index, r)}
+                timezone={timezone}
               />
             ))}
           </div>
