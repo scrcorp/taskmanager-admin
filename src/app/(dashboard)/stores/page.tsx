@@ -38,6 +38,7 @@ import { Table, Badge, Modal, ConfirmDialog } from "@/components/ui";
 import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
 import { useToast } from "@/components/ui/Toast";
 import { formatDate, parseApiError } from "@/lib/utils";
+import { useTimezone } from "@/hooks/useTimezone";
 import { TIMEZONE_OPTIONS } from "@/lib/timezones";
 import { usePermissions } from "@/hooks/usePermissions";
 import { PERMISSIONS } from "@/lib/permissions";
@@ -136,6 +137,7 @@ export default function StoresPage(): React.ReactElement {
 
   /** 권한 훅 / Permission hook */
   const { hasPermission } = usePermissions();
+  const tz = useTimezone();
   const canWrite = hasPermission(PERMISSIONS.STORES_CREATE);
 
   /** 매장 데이터 훅 / Store data hooks */
@@ -389,7 +391,7 @@ export default function StoresPage(): React.ReactElement {
         hideOnMobile: true,
         render: (store: Store) => (
           <span className="text-text-muted text-xs">
-            {formatDate(store.created_at)}
+            {formatDate(store.created_at, tz)}
           </span>
         ),
       },
@@ -423,7 +425,7 @@ export default function StoresPage(): React.ReactElement {
           ]
         : []),
     ],
-    [handleOpenEdit, handleOpenDelete, canWrite],
+    [handleOpenEdit, handleOpenDelete, canWrite, tz],
   );
 
   if (isLoading) {

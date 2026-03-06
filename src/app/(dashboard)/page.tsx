@@ -41,6 +41,7 @@ import { Card, Select, Badge, LoadingSpinner, Button } from "@/components/ui";
 import { useToast } from "@/components/ui/Toast";
 import api from "@/lib/api";
 import { cn, formatDate, parseApiError } from "@/lib/utils";
+import { useTimezone } from "@/hooks/useTimezone";
 import type { Announcement, Store } from "@/types";
 
 // ─── Date Range Helpers ──────────────────────────────────
@@ -179,6 +180,7 @@ export default function DashboardPage(): React.ReactElement {
   const router = useRouter();
   useAuthStore();
   const { toast } = useToast();
+  const tz = useTimezone();
 
   // ─── Export state ──────────────────────────────────
   const [isExporting, setIsExporting] = useState<boolean>(false);
@@ -677,7 +679,7 @@ export default function DashboardPage(): React.ReactElement {
                   </div>
                   <div className="flex-shrink-0 flex items-center gap-1 text-text-muted">
                     <Calendar className="h-3 w-3" />
-                    <span className="text-xs whitespace-nowrap">{formatDate(ann.created_at)}</span>
+                    <span className="text-xs whitespace-nowrap">{formatDate(ann.created_at, tz)}</span>
                   </div>
                 </div>
                 <div className="flex items-center gap-2 mt-2">
