@@ -950,6 +950,19 @@ export interface ScheduleCreate {
   force?: boolean;
 }
 
+export interface ScheduleBulkCreate {
+  entries: ScheduleCreate[];
+  skip_on_conflict?: boolean;
+}
+
+export interface ScheduleBulkResult {
+  created: number;
+  skipped: number;
+  failed: number;
+  errors: string[];
+  items: Schedule[];
+}
+
 export interface ScheduleUpdate {
   user_id?: string | null;
   work_role_id?: string | null;
