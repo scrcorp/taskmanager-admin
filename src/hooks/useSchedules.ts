@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient, type UseQueryResult, type UseMutationResult } from "@tanstack/react-query";
 import type { AxiosResponse } from "axios";
 import api from "@/lib/api";
-import type { Schedule, ScheduleCreate, ScheduleUpdate, PaginatedResponse } from "@/types";
+import type { Schedule, ScheduleBulkCreate, ScheduleBulkResult, ScheduleCreate, ScheduleUpdate, PaginatedResponse } from "@/types";
 
 export const useSchedule = (
   id: string | undefined,
@@ -41,6 +41,17 @@ export const useCreateSchedule = (): UseMutationResult<Schedule, Error, Schedule
   return useMutation<Schedule, Error, ScheduleCreate>({
     mutationFn: async (data) => {
       const res: AxiosResponse<Schedule> = await api.post("/admin/schedules", data);
+      return res.data;
+    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["schedules"] }); },
+  });
+};
+
+export const useBulkCreateSchedules = (): UseMutationResult<ScheduleBulkResult, Error, ScheduleBulkCreate> => {
+  const qc = useQueryClient();
+  return useMutation<ScheduleBulkResult, Error, ScheduleBulkCreate>({
+    mutationFn: async (data) => {
+      const res: AxiosResponse<ScheduleBulkResult> = await api.post("/admin/schedules/bulk", data);
       return res.data;
     },
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["schedules"] }); },
