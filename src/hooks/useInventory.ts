@@ -246,8 +246,12 @@ export const useDownloadProductTemplate = (): (() => Promise<void>) => {
 export interface ProductImportResult {
   created: number;
   linked: number;
-  skipped: number;
+  skipped: string[] | number;
   errors: string[];
+  error?: string;
+  warnings?: string[];
+  validation_errors?: string[];
+  rows_parsed?: number;
 }
 
 /**
@@ -271,6 +275,45 @@ export const useImportProducts = (): UseMutationResult<
     },
     onSuccess: (): void => {
       queryClient.invalidateQueries({ queryKey: ["inventory", "products"] });
+    },
+  });
+};
+
+/** Preview import item from server */
+export interface ImportPreviewItem {
+  row: number;
+  name: string;
+  code: string | null;
+  category: string;
+  store_codes: string;
+  existing_code: string | null;
+  duplicate_name: string | null;
+  action: "link" | "create";
+}
+
+/** Preview import response from server */
+export interface ImportPreviewResult {
+  items?: ImportPreviewItem[];
+  total?: number;
+  error?: string;
+}
+
+/**
+ * Excel import preview — parse and check duplicates without creating.
+ */
+export const usePreviewImport = (): UseMutationResult<
+  ImportPreviewResult,
+  Error,
+  FormData
+> => {
+  return useMutation<ImportPreviewResult, Error, FormData>({
+    mutationFn: async (formData: FormData): Promise<ImportPreviewResult> => {
+      const response: AxiosResponse<ImportPreviewResult> = await api.post(
+        "/admin/inventory/products/preview-import",
+        formData,
+        { headers: { "Content-Type": "multipart/form-data" } },
+      );
+      return response.data;
     },
   });
 };
@@ -412,6 +455,31 @@ export const useDeactivateProduct = (): UseMutationResult<void, Error, string> =
   });
 };
 
+export const useActivateProduct = (): UseMutationResult<InventoryProduct, Error, string> => {
+  const queryClient: QueryClient = useQueryClient();
+  return useMutation<InventoryProduct, Error, string>({
+    mutationFn: async (id: string): Promise<InventoryProduct> => {
+      const response: AxiosResponse<InventoryProduct> = await api.post(`/admin/inventory/products/${id}/activate`);
+      return response.data;
+    },
+    onSuccess: (): void => {
+      queryClient.invalidateQueries({ queryKey: ["inventory", "products"] });
+    },
+  });
+};
+
+export const useDeleteProduct = (): UseMutationResult<void, Error, string> => {
+  const queryClient: QueryClient = useQueryClient();
+  return useMutation<void, Error, string>({
+    mutationFn: async (id: string): Promise<void> => {
+      await api.post(`/admin/inventory/products/${id}/delete`);
+    },
+    onSuccess: (): void => {
+      queryClient.invalidateQueries({ queryKey: ["inventory", "products"] });
+    },
+  });
+};
+
 // ─── Store Inventory Hooks ────────────────────────────────────────────────────
 
 /**
@@ -504,6 +572,20 @@ export const useUpdateStoreInventoryItem = (
         data,
       );
       return response.data;
+    },
+    onSuccess: (): void => {
+      queryClient.invalidateQueries({ queryKey: ["inventory", "stores", storeId] });
+    },
+  });
+};
+
+export const useRemoveStoreInventoryItem = (
+  storeId: string,
+): UseMutationResult<void, Error, string> => {
+  const queryClient: QueryClient = useQueryClient();
+  return useMutation<void, Error, string>({
+    mutationFn: async (itemId: string): Promise<void> => {
+      await api.delete(`/admin/stores/${storeId}/inventory/${itemId}`);
     },
     onSuccess: (): void => {
       queryClient.invalidateQueries({ queryKey: ["inventory", "stores", storeId] });

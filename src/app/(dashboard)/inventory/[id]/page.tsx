@@ -10,7 +10,7 @@
 import React, { useState, useCallback } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { ChevronLeft, Package, Edit, Power } from "lucide-react";
-import { useProduct, useUpdateProduct, useDeactivateProduct } from "@/hooks/useInventory";
+import { useProduct, useUpdateProduct, useDeactivateProduct, useActivateProduct, useDeleteProduct } from "@/hooks/useInventory";
 import { usePermissions } from "@/hooks/usePermissions";
 import { PERMISSIONS } from "@/lib/permissions";
 import {
@@ -25,10 +25,10 @@ import {
 import { useToast } from "@/components/ui/Toast";
 import { parseApiError, formatDateTime } from "@/lib/utils";
 import { ProductForm, type ProductFormData } from "@/components/inventory/ProductForm";
-import type { StoreInventoryItem } from "@/types";
+import type { StoreInventoryItem, StoreInventoryBrief } from "@/types";
 
 /** 재고 상태 Badge 매핑 (Stock status badge mapping) */
-function stockBadge(item: StoreInventoryItem): { variant: "success" | "warning" | "danger"; label: string } {
+function stockBadge(item: StoreInventoryBrief): { variant: "success" | "warning" | "danger"; label: string } {
   if (item.current_quantity <= 0) return { variant: "danger", label: "Out of Stock" };
   if (item.current_quantity <= item.min_quantity) return { variant: "warning", label: "Low Stock" };
   return { variant: "success", label: "In Stock" };
@@ -46,19 +46,22 @@ export default function ProductDetailPage(): React.ReactElement {
 
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isDeactivateOpen, setIsDeactivateOpen] = useState(false);
+  const [isDeleteOpen, setIsDeleteOpen] = useState(false);
   const [editFormData, setEditFormData] = useState<ProductFormData | null>(null);
 
   const { data: product, isLoading } = useProduct(productId);
   const updateProduct = useUpdateProduct();
   const deactivateProduct = useDeactivateProduct();
+  const activateProduct = useActivateProduct();
+  const deleteProduct = useDeleteProduct();
 
-  const storeInventories = product?.store_inventories ?? [];
+  const storeInventories = product?.stores ?? [];
 
   /** 매장 사용현황 테이블 컬럼 */
   const columns: {
     key: string;
     header: string;
-    render?: (item: StoreInventoryItem) => React.ReactNode;
+    render?: (item: StoreInventoryBrief) => React.ReactNode;
   }[] = [
     {
       key: "store_name",
@@ -73,8 +76,8 @@ export default function ProductDetailPage(): React.ReactElement {
       render: (item) => {
         const qty = item.current_quantity;
         const subDisplay =
-          item.sub_unit && item.sub_unit_ratio
-            ? ` (${Math.floor(qty / item.sub_unit_ratio)} ${item.sub_unit})`
+          product?.sub_unit && product?.sub_unit_ratio
+            ? ` (${Math.floor(qty / product.sub_unit_ratio)} ${product.sub_unit})`
             : "";
         return (
           <span className="text-sm text-text">
@@ -97,15 +100,6 @@ export default function ProductDetailPage(): React.ReactElement {
         const { variant, label } = stockBadge(item);
         return <Badge variant={variant}>{label}</Badge>;
       },
-    },
-    {
-      key: "last_audited_at",
-      header: "Last Audited",
-      render: (item) => (
-        <span className="text-xs text-text-muted">
-          {item.last_audited_at ? formatDateTime(item.last_audited_at) : "Never"}
-        </span>
-      ),
     },
   ];
 
@@ -152,6 +146,33 @@ export default function ProductDetailPage(): React.ReactElement {
     });
   }, [product, deactivateProduct, toast, router]);
 
+  const handleActivate = useCallback(() => {
+    if (!product) return;
+    activateProduct.mutate(product.id, {
+      onSuccess: () => {
+        toast({ type: "success", message: "Product activated." });
+        router.refresh();
+      },
+      onError: (err) => {
+        toast({ type: "error", message: parseApiError(err, "Failed to activate.") });
+      },
+    });
+  }, [product, activateProduct, toast, router]);
+
+  const handleDelete = useCallback(() => {
+    if (!product) return;
+    deleteProduct.mutate(product.id, {
+      onSuccess: () => {
+        toast({ type: "success", message: "Product permanently deleted." });
+        setIsDeleteOpen(false);
+        router.push("/inventory");
+      },
+      onError: (err) => {
+        toast({ type: "error", message: parseApiError(err, "Failed to delete.") });
+      },
+    });
+  }, [product, deleteProduct, toast, router]);
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -195,12 +216,31 @@ export default function ProductDetailPage(): React.ReactElement {
         )}
         {canDelete && product.is_active && (
           <Button
-            variant="danger"
+            variant="secondary"
             size="sm"
             onClick={() => setIsDeactivateOpen(true)}
           >
             <Power size={14} />
             Deactivate
+          </Button>
+        )}
+        {canUpdate && !product.is_active && (
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={handleActivate}
+            isLoading={activateProduct.isPending}
+          >
+            Activate
+          </Button>
+        )}
+        {canDelete && (
+          <Button
+            variant="danger"
+            size="sm"
+            onClick={() => setIsDeleteOpen(true)}
+          >
+            Delete
           </Button>
         )}
       </div>
@@ -281,7 +321,7 @@ export default function ProductDetailPage(): React.ReactElement {
       </div>
 
       <Card padding="p-0">
-        <Table<StoreInventoryItem>
+        <Table<StoreInventoryBrief>
           columns={columns}
           data={storeInventories}
           isLoading={false}
@@ -336,6 +376,16 @@ export default function ProductDetailPage(): React.ReactElement {
         message="Are you sure you want to deactivate this product? Store inventory records will be preserved."
         confirmLabel="Deactivate"
         isLoading={deactivateProduct.isPending}
+      />
+
+      <ConfirmDialog
+        isOpen={isDeleteOpen}
+        onClose={() => setIsDeleteOpen(false)}
+        onConfirm={handleDelete}
+        title="Permanently Delete Product"
+        message="This will permanently delete this product and ALL related data including store inventory, stock in/out history, and audit records. This action CANNOT be undone."
+        confirmLabel="Delete Permanently"
+        isLoading={deleteProduct.isPending}
       />
     </div>
   );
