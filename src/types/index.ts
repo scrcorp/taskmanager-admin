@@ -174,6 +174,7 @@ export interface ChecklistItem {
   title: string;
   description: string | null;
   verification_type: string;
+  min_photos?: number;
   recurrence_type: "daily" | "weekly";
   recurrence_days: number[] | null;
   sort_order: number;
@@ -328,6 +329,7 @@ export interface ChecklistItemCreate {
   title: string;
   description?: string | null;
   verification_type?: string;
+  min_photos?: number;
   recurrence_type?: "daily" | "weekly";
   recurrence_days?: number[] | null;
   sort_order?: number;
@@ -339,6 +341,7 @@ export interface ChecklistItemUpdate {
   title?: string;
   description?: string | null;
   verification_type?: string;
+  min_photos?: number;
   recurrence_type?: "daily" | "weekly";
   recurrence_days?: number[] | null;
   sort_order?: number;
