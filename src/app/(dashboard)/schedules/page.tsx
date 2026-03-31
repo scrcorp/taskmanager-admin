@@ -23,7 +23,8 @@ import { useWorkRoles } from "@/hooks/useWorkRoles";
 import { useSchedules } from "@/hooks/useSchedules";
 import { useReviewSummary, useScheduleChecklistMap } from "@/hooks/useChecklistInstances";
 import { Card, Badge } from "@/components/ui";
-import { cn } from "@/lib/utils";
+import { cn, getWorkDate } from "@/lib/utils";
+import { useTimezone } from "@/hooks/useTimezone";
 import type { ChecklistInstance, Store, Schedule, WorkRole } from "@/types";
 
 // ─── View types ─────────────────────────────────────
@@ -144,6 +145,17 @@ export default function ScheduleOverviewPage(): React.ReactElement {
   const { data: stores } = useStores();
   const storeId = urlParams.store;
 
+  // Auto-select first store + resolve day boundary "today"
+  const selectedStore = useMemo(
+    () => stores?.find((s) => s.id === (storeId || stores?.[0]?.id)),
+    [stores, storeId],
+  );
+  const effectiveTz = useTimezone(selectedStore?.timezone);
+  const effectiveTodayStr = useMemo(
+    () => getWorkDate(selectedStore?.day_start_time, effectiveTz),
+    [selectedStore, effectiveTz],
+  );
+
   // List view date range
   const listPreset = (["today", "week", "month", "custom"].includes(urlParams.preset) ? urlParams.preset : "week") as ListPreset;
   const listFrom = urlParams.from;
@@ -208,8 +220,8 @@ export default function ScheduleOverviewPage(): React.ReactElement {
   // ─── Navigation ─────────────────────────────────
 
   const goToday = useCallback(() => {
-    setUrlParams({ date: toDateStr(new Date()) });
-  }, [setUrlParams]);
+    setUrlParams({ date: effectiveTodayStr });
+  }, [setUrlParams, effectiveTodayStr]);
 
   const goPrev = useCallback(() => {
     if (calView === "day") {
@@ -501,6 +513,7 @@ export default function ScheduleOverviewPage(): React.ReactElement {
             roles={activeRoles}
             schedules={allSchedules}
             weekStart={weekStart}
+            todayStr={effectiveTodayStr}
             checklistMap={checklistMap}
             onDetailClick={goToDetail}
           />
@@ -509,6 +522,7 @@ export default function ScheduleOverviewPage(): React.ReactElement {
             schedules={allSchedules}
             year={monthYear.year}
             month={monthYear.month}
+            todayStr={effectiveTodayStr}
             onDayClick={goToDay}
           />
         )
@@ -735,17 +749,18 @@ function WeekView({
   roles,
   schedules,
   weekStart,
+  todayStr,
   checklistMap,
   onDetailClick,
 }: {
   roles: WorkRole[];
   schedules: Schedule[];
   weekStart: Date;
+  todayStr: string;
   checklistMap?: Map<string, ChecklistInstance>;
   onDetailClick: (id: string) => void;
 }) {
   const days = getWeekDays(weekStart);
-  const todayStr = toDateStr(new Date());
 
   if (roles.length === 0) {
     return <div className="text-center py-20 text-text-muted">No work roles configured</div>;
@@ -856,14 +871,15 @@ function MonthView({
   schedules,
   year,
   month,
+  todayStr,
   onDayClick,
 }: {
   schedules: Schedule[];
   year: number;
   month: number;
+  todayStr: string;
   onDayClick: (dateStr: string) => void;
 }) {
-  const todayStr = toDateStr(new Date());
   const firstDay = new Date(year, month, 1);
   const startOffset = firstDay.getDay();
   const daysInMonth = new Date(year, month + 1, 0).getDate();

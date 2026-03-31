@@ -50,7 +50,8 @@ import {
 import { usePermissions } from "@/hooks/usePermissions";
 import { Card, Badge, Modal, Select, Button } from "@/components/ui";
 import { useToast } from "@/components/ui/Toast";
-import { cn, parseApiError } from "@/lib/utils";
+import { cn, parseApiError, getWorkDate } from "@/lib/utils";
+import { useTimezone } from "@/hooks/useTimezone";
 import { useSchedulePeriods, useCreateSchedulePeriod, useTransitionPeriod } from "@/hooks/useSchedulePeriods";
 import type { Store, User, WorkRole, Schedule, ScheduleRequestItem, SchedulePeriod, ScheduleConfirmPreview } from "@/types";
 
@@ -216,7 +217,22 @@ export default function ScheduleManagePage(): React.ReactElement {
 
   // View state
   const [viewMode, setViewMode] = useState<ViewMode>("staff");
-  const todayStr = toDateStr(new Date());
+
+  // Store selection
+  const { data: stores } = useStores();
+  const [storeId, setStoreId] = useState<string>("");
+  const effectiveStoreId = storeId || stores?.[0]?.id || "";
+
+  // Resolve "today" based on selected store's day boundary + timezone
+  const selectedStore = useMemo(
+    () => stores?.find((s) => s.id === effectiveStoreId),
+    [stores, effectiveStoreId],
+  );
+  const effectiveTz = useTimezone(selectedStore?.timezone);
+  const todayStr = useMemo(
+    () => getWorkDate(selectedStore?.day_start_time, effectiveTz),
+    [selectedStore, effectiveTz],
+  );
 
   // Week navigation — default to next week (manage = 다음 주 확정 목적)
   const [weekStart, setWeekStart] = useState<Date>(() => addDays(getWeekStart(new Date()), 7));
@@ -225,11 +241,6 @@ export default function ScheduleManagePage(): React.ReactElement {
   const isPastWeek = weekDays[6] < todayStr;
   const isCurrentWeek = weekDays[0] <= todayStr && weekDays[6] >= todayStr;
   const isLocked = isPastWeek || isCurrentWeek; // 이번 주 이하는 잠금
-
-  // Store selection
-  const { data: stores } = useStores();
-  const [storeId, setStoreId] = useState<string>("");
-  const effectiveStoreId = storeId || stores?.[0]?.id || "";
 
   // Data
   const { data: workRoles } = useWorkRoles(effectiveStoreId || undefined);

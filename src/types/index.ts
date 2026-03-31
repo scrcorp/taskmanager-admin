@@ -47,6 +47,7 @@ export interface Store {
   address: string | null;
   is_active: boolean;
   operating_hours: Record<string, unknown> | null;
+  day_start_time: Record<string, string> | null;
   max_work_hours_weekly: number | null;
   timezone: string | null;
   created_at: string;
