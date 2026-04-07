@@ -10,8 +10,8 @@
  * - mockData 그대로 사용 (Task 8d에서 React Query로 교체 예정)
  */
 
-import { useState, useMemo } from 'react'
-import { useRouter } from 'next/navigation'
+import { useState, useMemo, useEffect } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { StatsHeader } from './StatsHeader'
 import { ScheduleBlock } from './ScheduleBlock'
 import { ContextMenu } from './ContextMenu'
@@ -33,6 +33,7 @@ import type { ViewMode, SortState, ScheduleBlock as ScheduleBlockType } from './
 
 export default function SchedulesCalendarView() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const [view, setView] = useState<ViewMode>('weekly')
   const [selectedDay, setSelectedDay] = useState(weekDates[0]?.date ?? '')
   const [viewAsGM, setViewAsGM] = useState(true)
@@ -64,6 +65,16 @@ export default function SchedulesCalendarView() {
     setSelectedStore(stores[0]!.id)
   }
 
+  // ?edit=<id> 쿼리 파라미터 → edit 모달 열기 (detail page 등에서 진입 가능)
+  useEffect(() => {
+    const editId = searchParams.get('edit')
+    if (editId) {
+      setEditModal({ open: true, mode: 'edit', blockId: editId })
+      // URL 정리 (모달이 닫혀도 매번 다시 열리지 않도록)
+      router.replace('/schedules', { scroll: false })
+    }
+  }, [searchParams, router])
+
   // ─── Mutations ──────────────────────────────────────────────────
   const submitMutation = useSubmitSchedule()
   const confirmMutation = useConfirmSchedule()
@@ -81,6 +92,7 @@ export default function SchedulesCalendarView() {
       createMutation.mutate({
         user_id: payload.staffId,
         store_id: selectedStore,
+        work_role_id: payload.workRoleId,
         work_date: payload.date,
         start_time: payload.startTime,
         end_time: payload.endTime,
@@ -94,6 +106,7 @@ export default function SchedulesCalendarView() {
         id: editModal.blockId,
         data: {
           user_id: payload.staffId,
+          work_role_id: payload.workRoleId,
           work_date: payload.date,
           start_time: payload.startTime,
           end_time: payload.endTime,
@@ -402,6 +415,7 @@ export default function SchedulesCalendarView() {
             prefilledStaffId={editModal.staffId}
             prefilledDate={editModal.date}
             staffList={staff}
+            storeId={selectedStore}
             onClose={() => setEditModal({ open: false, mode: 'add' })}
             onSave={handleScheduleEditSave}
             isSaving={createMutation.isPending || updateMutation.isPending}
@@ -588,19 +602,20 @@ export default function SchedulesCalendarView() {
                               <div className="flex flex-col gap-1">
                                 {blocks.map(b => <ScheduleBlock key={b.id} block={b} staff={s} showCost={viewAsGM} attendance={getAttendance(b.id)} onClick={(e) => handleClick(e, b.id, b.status)} />)}
                               </div>
-                            ) : !s.hourlyRate ? (
-                              <div className="h-full min-h-[44px] flex items-center justify-center" title="Cannot assign: No hourly rate set">
-                                <svg width="14" height="14" viewBox="0 0 14 14" fill="none" className="opacity-25">
-                                  <path d="M7 4v3m0 2.5h.01M2.5 11.5h9a1 1 0 00.87-1.5L8.37 3a1 1 0 00-1.74 0L2.63 10a1 1 0 00.87 1.5z" stroke="var(--color-danger)" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/>
-                                </svg>
-                              </div>
                             ) : (
                               <div
                                 className="h-full min-h-[44px] flex items-center justify-center opacity-0 hover:opacity-40 transition-opacity cursor-pointer"
                                 role="button"
                                 onClick={() => openAddModal(s.id, day.date)}
+                                title={!s.hourlyRate ? 'Warning: this user has no hourly rate set' : undefined}
                               >
-                                <span className="text-[var(--color-text-muted)] text-[16px]">+</span>
+                                {!s.hourlyRate ? (
+                                  <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                                    <path d="M7 4v3m0 2.5h.01M2.5 11.5h9a1 1 0 00.87-1.5L8.37 3a1 1 0 00-1.74 0L2.63 10a1 1 0 00.87 1.5z" stroke="var(--color-warning)" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/>
+                                  </svg>
+                                ) : (
+                                  <span className="text-[var(--color-text-muted)] text-[16px]">+</span>
+                                )}
                               </div>
                             )}
                           </td>

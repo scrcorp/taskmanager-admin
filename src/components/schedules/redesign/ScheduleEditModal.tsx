@@ -1,4 +1,6 @@
 import { useState, useEffect } from 'react'
+import { useWorkRoles } from '@/hooks/useWorkRoles'
+import type { WorkRole as ServerWorkRole } from '@/types'
 import type { ScheduleBlock as ScheduleBlockType, Staff } from './types'
 import { roleColors } from './mockData'
 
@@ -7,8 +9,7 @@ export interface ScheduleEditPayload {
   date: string
   startTime: string  // "HH:MM"
   endTime: string
-  shift: string
-  position: string
+  workRoleId: string | null
   status: 'draft' | 'requested' | 'confirmed'
   notes: string
 }
@@ -20,14 +21,13 @@ interface Props {
   prefilledStaffId?: string
   prefilledDate?: string
   staffList: Staff[]
+  /** 현재 선택된 store id — work role 목록 fetch 용 */
+  storeId: string
   onClose: () => void
   onSave: (payload: ScheduleEditPayload) => void
   onDelete?: () => void
   isSaving?: boolean
 }
-
-const POSITIONS = ['Manager', 'Server', 'Barista', 'Kitchen', 'Cashier']
-const SHIFTS = ['Open', 'Morning', 'Day', 'Afternoon', 'Close']
 
 function hourToTime(h: number): string {
   const hh = Math.floor(h)
@@ -35,15 +35,23 @@ function hourToTime(h: number): string {
   return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`
 }
 
-export function ScheduleEditModal({ open, mode, block, prefilledStaffId, prefilledDate, staffList, onClose, onSave, onDelete, isSaving }: Props) {
+function workRoleLabel(wr: ServerWorkRole): string {
+  if (wr.name) return wr.name
+  return `${wr.shift_name ?? ''} - ${wr.position_name ?? ''}`.trim()
+}
+
+export function ScheduleEditModal({ open, mode, block, prefilledStaffId, prefilledDate, staffList, storeId, onClose, onSave, onDelete, isSaving }: Props) {
   const [staffId, setStaffId] = useState(prefilledStaffId || staffList[0]?.id || '')
   const [date, setDate] = useState(prefilledDate || new Date().toISOString().slice(0, 10))
   const [startTime, setStartTime] = useState('09:00')
   const [endTime, setEndTime] = useState('17:00')
-  const [shift, setShift] = useState('Day')
-  const [position, setPosition] = useState('Server')
+  const [workRoleId, setWorkRoleId] = useState<string>('')
   const [notes, setNotes] = useState('')
   const [status, setStatus] = useState<'draft' | 'requested' | 'confirmed'>('draft')
+
+  // 현재 store의 work role 목록 (shift × position)
+  const workRolesQ = useWorkRoles(storeId || undefined)
+  const workRoles = workRolesQ.data ?? []
 
   useEffect(() => {
     if (!open) return
@@ -52,9 +60,7 @@ export function ScheduleEditModal({ open, mode, block, prefilledStaffId, prefill
       setDate(block.date)
       setStartTime(hourToTime(block.startHour))
       setEndTime(hourToTime(block.endHour))
-      setShift(block.shift)
-      const st = staffList.find(s => s.id === block.staffId)
-      setPosition(st?.position || 'Server')
+      setWorkRoleId(block.workRoleId ?? '')
       setStatus(
         block.status === 'confirmed' || block.status === 'requested' || block.status === 'draft'
           ? block.status
@@ -66,19 +72,33 @@ export function ScheduleEditModal({ open, mode, block, prefilledStaffId, prefill
       setDate(prefilledDate || new Date().toISOString().slice(0, 10))
       setStartTime('09:00')
       setEndTime('17:00')
-      setShift('Day')
-      setPosition('Server')
+      setWorkRoleId('')
       setNotes('')
       setStatus('draft')
     }
   }, [open, mode, block, prefilledStaffId, prefilledDate, staffList])
+
+  // work role 선택 시 default time 자동 채움 (add mode + 빈 시간일 때)
+  useEffect(() => {
+    if (!workRoleId) return
+    const wr = workRoles.find(w => w.id === workRoleId)
+    if (!wr) return
+    if (mode === 'add' && wr.default_start_time && wr.default_end_time) {
+      setStartTime(wr.default_start_time.slice(0, 5))
+      setEndTime(wr.default_end_time.slice(0, 5))
+    }
+  }, [workRoleId, workRoles, mode])
 
   if (!open) return null
 
   const selectedStaff = staffList.find(s => s.id === staffId)
 
   function handleSave() {
-    onSave({ staffId, date, startTime, endTime, shift, position, status, notes })
+    onSave({
+      staffId, date, startTime, endTime,
+      workRoleId: workRoleId || null,
+      status, notes,
+    })
   }
 
   return (
@@ -158,28 +178,25 @@ export function ScheduleEditModal({ open, mode, block, prefilledStaffId, prefill
             </div>
           </div>
 
-          {/* Shift + Position */}
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-[11px] font-semibold uppercase tracking-wider text-[var(--color-text-muted)] mb-1.5">Shift</label>
-              <select
-                value={shift}
-                onChange={e => setShift(e.target.value)}
-                className="w-full px-3 py-2 border border-[var(--color-border)] rounded-lg text-[13px] bg-white"
-              >
-                {SHIFTS.map(s => <option key={s} value={s}>{s}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="block text-[11px] font-semibold uppercase tracking-wider text-[var(--color-text-muted)] mb-1.5">Position</label>
-              <select
-                value={position}
-                onChange={e => setPosition(e.target.value)}
-                className="w-full px-3 py-2 border border-[var(--color-border)] rounded-lg text-[13px] bg-white"
-              >
-                {POSITIONS.map(p => <option key={p} value={p}>{p}</option>)}
-              </select>
-            </div>
+          {/* Work Role (shift × position) */}
+          <div>
+            <label className="block text-[11px] font-semibold uppercase tracking-wider text-[var(--color-text-muted)] mb-1.5">Work Role</label>
+            <select
+              value={workRoleId}
+              onChange={e => setWorkRoleId(e.target.value)}
+              className="w-full px-3 py-2 border border-[var(--color-border)] rounded-lg text-[13px] bg-white"
+            >
+              <option value="">— None (no role) —</option>
+              {workRolesQ.isLoading && <option disabled>Loading…</option>}
+              {workRoles.map(wr => (
+                <option key={wr.id} value={wr.id}>{workRoleLabel(wr)}</option>
+              ))}
+            </select>
+            {workRoles.length === 0 && !workRolesQ.isLoading && (
+              <p className="text-[11px] text-[var(--color-text-muted)] mt-1">
+                No work roles defined for this store yet. Add some in Schedule Settings.
+              </p>
+            )}
           </div>
 
           {/* Status */}
