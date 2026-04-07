@@ -1,10 +1,16 @@
-import type { ScheduleBlock as ScheduleBlockType, Staff, AuditEventType } from './types'
-import { roleColors, roleLabels, schedules, weekDates, getAttendance, getAuditEvents } from './mockData'
+import type { ScheduleBlock as ScheduleBlockType, Staff, AuditEventType, ScheduleAuditEvent, Attendance } from './types'
+import { roleColors, roleLabels, schedules as mockSchedules, weekDates, getAttendance as mockGetAttendance, getAuditEvents as mockGetAuditEvents } from './mockData'
 
 interface Props {
   block: ScheduleBlockType
   staff: Staff
   showCost: boolean
+  /** Optional: when provided, used instead of mock related schedules */
+  relatedSchedules?: ScheduleBlockType[]
+  /** Optional: when provided, used instead of mock attendance lookup */
+  attendance?: Attendance | null
+  /** Optional: when provided, used instead of mock audit events */
+  auditEvents?: ScheduleAuditEvent[]
   onBack: () => void
   onEdit: () => void
   onSwap: () => void
@@ -73,14 +79,14 @@ const currentWorkRoles: Record<string, string> = {
   'wr-close': 'Close',
 }
 
-export function ScheduleDetailPage({ block, staff, showCost, onBack, onEdit, onSwap, onRevert, onDelete }: Props) {
+export function ScheduleDetailPage({ block, staff, showCost, relatedSchedules: relatedSchedulesProp, attendance: attendanceProp, auditEvents: auditEventsProp, onBack, onEdit, onSwap, onRevert, onDelete }: Props) {
   const hours = block.endHour - block.startHour
   const cost = staff.hourlyRate ? hours * staff.hourlyRate : null
   const status = statusMeta[block.status] ?? statusMeta.none
   const weekDateSet = new Set(weekDates.map(d => d.date))
-  const relatedSchedules = schedules.filter(s => s.staffId === staff.id && s.id !== block.id && weekDateSet.has(s.date))
-  const attendance = getAttendance(block.id)
-  const events = getAuditEvents(block.id)
+  const relatedSchedules = relatedSchedulesProp ?? mockSchedules.filter(s => s.staffId === staff.id && s.id !== block.id && weekDateSet.has(s.date))
+  const attendance = attendanceProp !== undefined ? attendanceProp : mockGetAttendance(block.id)
+  const events = auditEventsProp ?? mockGetAuditEvents(block.id)
   const currentRoleName = block.workRoleId ? currentWorkRoles[block.workRoleId] : undefined
   const roleNameChanged = currentRoleName && currentRoleName !== block.workRoleNameSnapshot
 

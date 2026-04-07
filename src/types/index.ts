@@ -527,6 +527,7 @@ export interface Attendance {
   store_name: string | null;
   user_id: string;
   user_name: string | null;
+  schedule_id: string | null;
   work_date: string;
   clock_in: string | null;
   clock_in_timezone: string | null;
@@ -534,9 +535,11 @@ export interface Attendance {
   break_end: string | null;
   clock_out: string | null;
   clock_out_timezone: string | null;
-  status: "clocked_in" | "on_break" | "clocked_out";
+  status: "not_yet" | "working" | "on_break" | "late" | "clocked_out" | "no_show";
+  anomalies: string[] | null;
   total_work_minutes: number | null;
   total_break_minutes: number | null;
+  net_work_minutes: number | null;
   note: string | null;
   created_at: string;
   corrections?: AttendanceCorrection[];
@@ -976,6 +979,8 @@ export interface ScheduleCreate {
   /** Override the auto-calculated hourly rate. Omit to use org/store/user cascade. */
   hourly_rate?: number | null;
   note?: string | null;
+  /** Initial status. Default 'confirmed' for direct admin creation. */
+  status?: "draft" | "requested" | "confirmed";
   force?: boolean;
 }
 

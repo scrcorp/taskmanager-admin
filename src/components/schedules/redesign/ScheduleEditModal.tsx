@@ -1,6 +1,17 @@
 import { useState, useEffect } from 'react'
-import type { ScheduleBlock as ScheduleBlockType } from './types'
-import { staff, roleColors } from './mockData'
+import type { ScheduleBlock as ScheduleBlockType, Staff } from './types'
+import { roleColors } from './mockData'
+
+export interface ScheduleEditPayload {
+  staffId: string
+  date: string
+  startTime: string  // "HH:MM"
+  endTime: string
+  shift: string
+  position: string
+  status: 'draft' | 'requested' | 'confirmed'
+  notes: string
+}
 
 interface Props {
   open: boolean
@@ -8,9 +19,11 @@ interface Props {
   block?: ScheduleBlockType | null
   prefilledStaffId?: string
   prefilledDate?: string
+  staffList: Staff[]
   onClose: () => void
-  onSave: () => void
+  onSave: (payload: ScheduleEditPayload) => void
   onDelete?: () => void
+  isSaving?: boolean
 }
 
 const POSITIONS = ['Manager', 'Server', 'Barista', 'Kitchen', 'Cashier']
@@ -22,9 +35,9 @@ function hourToTime(h: number): string {
   return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`
 }
 
-export function ScheduleEditModal({ open, mode, block, prefilledStaffId, prefilledDate, onClose, onSave, onDelete }: Props) {
-  const [staffId, setStaffId] = useState(prefilledStaffId || staff[0].id)
-  const [date, setDate] = useState(prefilledDate || '2026-04-01')
+export function ScheduleEditModal({ open, mode, block, prefilledStaffId, prefilledDate, staffList, onClose, onSave, onDelete, isSaving }: Props) {
+  const [staffId, setStaffId] = useState(prefilledStaffId || staffList[0]?.id || '')
+  const [date, setDate] = useState(prefilledDate || new Date().toISOString().slice(0, 10))
   const [startTime, setStartTime] = useState('09:00')
   const [endTime, setEndTime] = useState('17:00')
   const [shift, setShift] = useState('Day')
@@ -40,7 +53,7 @@ export function ScheduleEditModal({ open, mode, block, prefilledStaffId, prefill
       setStartTime(hourToTime(block.startHour))
       setEndTime(hourToTime(block.endHour))
       setShift(block.shift)
-      const st = staff.find(s => s.id === block.staffId)
+      const st = staffList.find(s => s.id === block.staffId)
       setPosition(st?.position || 'Server')
       setStatus(
         block.status === 'confirmed' || block.status === 'requested' || block.status === 'draft'
@@ -49,8 +62,8 @@ export function ScheduleEditModal({ open, mode, block, prefilledStaffId, prefill
       )
       setNotes('')
     } else if (mode === 'add') {
-      setStaffId(prefilledStaffId || staff[0].id)
-      setDate(prefilledDate || '2026-04-01')
+      setStaffId(prefilledStaffId || staffList[0]?.id || '')
+      setDate(prefilledDate || new Date().toISOString().slice(0, 10))
       setStartTime('09:00')
       setEndTime('17:00')
       setShift('Day')
@@ -58,11 +71,15 @@ export function ScheduleEditModal({ open, mode, block, prefilledStaffId, prefill
       setNotes('')
       setStatus('draft')
     }
-  }, [open, mode, block, prefilledStaffId, prefilledDate])
+  }, [open, mode, block, prefilledStaffId, prefilledDate, staffList])
 
   if (!open) return null
 
-  const selectedStaff = staff.find(s => s.id === staffId)
+  const selectedStaff = staffList.find(s => s.id === staffId)
+
+  function handleSave() {
+    onSave({ staffId, date, startTime, endTime, shift, position, status, notes })
+  }
 
   return (
     <div className="fixed inset-0 z-[300] flex items-center justify-center p-4">
@@ -101,7 +118,7 @@ export function ScheduleEditModal({ open, mode, block, prefilledStaffId, prefill
                 onChange={e => setStaffId(e.target.value)}
                 className="flex-1 px-3 py-2 border border-[var(--color-border)] rounded-lg text-[13px] bg-white"
               >
-                {staff.map(s => (
+                {staffList.map(s => (
                   <option key={s.id} value={s.id}>{s.name} — {s.position}</option>
                 ))}
               </select>
@@ -215,10 +232,11 @@ export function ScheduleEditModal({ open, mode, block, prefilledStaffId, prefill
             </button>
             <button
               type="button"
-              onClick={onSave}
-              className="px-4 py-2 rounded-lg text-[13px] font-semibold bg-[var(--color-accent)] text-white hover:bg-[var(--color-accent-hover)]"
+              onClick={handleSave}
+              disabled={isSaving}
+              className="px-4 py-2 rounded-lg text-[13px] font-semibold bg-[var(--color-accent)] text-white hover:bg-[var(--color-accent-hover)] disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              Save
+              {isSaving ? 'Saving…' : 'Save'}
             </button>
           </div>
         </div>

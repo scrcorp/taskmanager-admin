@@ -26,7 +26,9 @@ import { useCalendarData } from './useCalendarData'
 import {
   useConfirmSchedule, useRejectSchedule, useDeleteSchedule,
   useSubmitSchedule, useRevertSchedule, useCancelSchedule,
+  useCreateSchedule, useUpdateSchedule, useSwapSchedule,
 } from '@/hooks/useSchedules'
+import type { ScheduleEditPayload } from './ScheduleEditModal'
 import type { ViewMode, SortState, ScheduleBlock as ScheduleBlockType } from './types'
 
 export default function SchedulesCalendarView() {
@@ -69,6 +71,39 @@ export default function SchedulesCalendarView() {
   const revertMutation = useRevertSchedule()
   const cancelMutation = useCancelSchedule()
   const deleteMutation = useDeleteSchedule()
+  const createMutation = useCreateSchedule()
+  const updateMutation = useUpdateSchedule()
+  const swapMutation = useSwapSchedule()
+  const [swapSourceId, setSwapSourceId] = useState<string | null>(null)
+
+  function handleScheduleEditSave(payload: ScheduleEditPayload) {
+    if (editModal.mode === 'add') {
+      createMutation.mutate({
+        user_id: payload.staffId,
+        store_id: selectedStore,
+        work_date: payload.date,
+        start_time: payload.startTime,
+        end_time: payload.endTime,
+        status: payload.status,
+        note: payload.notes || null,
+      }, {
+        onSuccess: () => setEditModal({ open: false, mode: 'add' }),
+      })
+    } else if (editModal.mode === 'edit' && editModal.blockId) {
+      updateMutation.mutate({
+        id: editModal.blockId,
+        data: {
+          user_id: payload.staffId,
+          work_date: payload.date,
+          start_time: payload.startTime,
+          end_time: payload.endTime,
+          note: payload.notes || null,
+        },
+      }, {
+        onSuccess: () => setEditModal({ open: false, mode: 'add' }),
+      })
+    }
+  }
 
   const currentStore = stores.find(s => s.id === selectedStore) ?? { id: '', name: '...', openHour: 9, closeHour: 22 }
 
@@ -271,7 +306,10 @@ export default function SchedulesCalendarView() {
       setHistoryScheduleId(blockId)
       setHistoryOpen(true)
     }
-    if (action === 'swap') setSwapOpen(true)
+    if (action === 'swap') {
+      setSwapSourceId(blockId)
+      setSwapOpen(true)
+    }
     if (action === 'details') router.push(`/schedules/${blockId}`)
     if (action === 'edit') setEditModal({ open: true, mode: 'edit', blockId })
     if (action === 'revert') setConfirmDialog({ open: true, type: 'revert', blockId })
@@ -331,7 +369,27 @@ export default function SchedulesCalendarView() {
       />
 
       {/* Swap Modal */}
-      <SwapModal open={swapOpen} onClose={() => setSwapOpen(false)} />
+      {(() => {
+        const fromBlock = swapSourceId ? schedules.find(s => s.id === swapSourceId) : null
+        const fromStaff = fromBlock ? staff.find(s => s.id === fromBlock.staffId) : null
+        return (
+          <SwapModal
+            open={swapOpen}
+            onClose={() => { setSwapOpen(false); setSwapSourceId(null) }}
+            fromBlock={fromBlock}
+            fromStaff={fromStaff}
+            candidateBlocks={schedules}
+            staffList={staff}
+            isSubmitting={swapMutation.isPending}
+            onSwap={(otherId, reason) => {
+              if (!swapSourceId) return
+              swapMutation.mutate({ id: swapSourceId, other_schedule_id: otherId, reason }, {
+                onSuccess: () => { setSwapOpen(false); setSwapSourceId(null) },
+              })
+            }}
+          />
+        )
+      })()}
 
       {/* Schedule Edit Modal */}
       {(() => {
@@ -343,8 +401,10 @@ export default function SchedulesCalendarView() {
             block={editBlock}
             prefilledStaffId={editModal.staffId}
             prefilledDate={editModal.date}
+            staffList={staff}
             onClose={() => setEditModal({ open: false, mode: 'add' })}
-            onSave={() => setEditModal({ open: false, mode: 'add' })}
+            onSave={handleScheduleEditSave}
+            isSaving={createMutation.isPending || updateMutation.isPending}
             onDelete={editModal.mode === 'edit' && editModal.blockId
               ? () => {
                   setEditModal({ open: false, mode: 'add' })

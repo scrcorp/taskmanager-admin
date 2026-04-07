@@ -1,4 +1,4 @@
-import { getAuditEvents } from './mockData'
+import { useScheduleAuditLog } from '@/hooks/useSchedules'
 import type { AuditEventType } from './types'
 
 interface Props {
@@ -44,7 +44,16 @@ function formatTimestamp(iso: string): string {
 }
 
 export function HistoryPanel({ open, onClose, scheduleId, staffName = 'Schedule', date = '' }: Props) {
-  const events = scheduleId ? getAuditEvents(scheduleId) : []
+  const auditQ = useScheduleAuditLog(open ? scheduleId : undefined)
+  const events = (auditQ.data ?? []).map((l) => ({
+    id: l.id,
+    eventType: (l.event_type as AuditEventType),
+    actorName: l.actor_name ?? 'Unknown',
+    actorRole: l.actor_role ?? 'staff',
+    timestamp: l.timestamp,
+    description: l.description ?? '',
+    reason: l.reason ?? undefined,
+  }))
 
   return (
     <>
@@ -63,7 +72,9 @@ export function HistoryPanel({ open, onClose, scheduleId, staffName = 'Schedule'
         </button>
       </div>
       <div className="flex-1 overflow-y-auto px-5 py-4">
-        {events.length === 0 ? (
+        {auditQ.isLoading ? (
+          <div className="text-[12px] text-[var(--color-text-muted)] italic py-4 text-center">Loading…</div>
+        ) : events.length === 0 ? (
           <div className="text-[12px] text-[var(--color-text-muted)] italic py-4 text-center">No audit history available</div>
         ) : (
           events.map((entry, i) => (

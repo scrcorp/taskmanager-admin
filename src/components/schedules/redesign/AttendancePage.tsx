@@ -1,8 +1,12 @@
+"use client";
+
 import { useState, useMemo } from 'react'
-import { stores, staff, schedules, attendances, today, roleColors, roleLabels } from './mockData'
+import { useAttendances } from '@/hooks/useAttendances'
+import { useStores } from '@/hooks/useStores'
+import { roleColors } from './mockData'
 import type { AttendanceState } from './types'
 
-const stateMeta: Record<AttendanceState, { label: string; bg: string; text: string; dot: string }> = {
+const stateMeta: Record<string, { label: string; bg: string; text: string; dot: string }> = {
   not_yet: { label: 'Scheduled', bg: 'bg-[var(--color-bg)]', text: 'text-[var(--color-text-muted)]', dot: 'bg-[var(--color-text-muted)]' },
   working: { label: 'Working', bg: 'bg-[var(--color-success-muted)]', text: 'text-[var(--color-success)]', dot: 'bg-[var(--color-success)] animate-pulse' },
   on_break: { label: 'On break', bg: 'bg-[var(--color-warning-muted)]', text: 'text-[var(--color-warning)]', dot: 'bg-[var(--color-warning)]' },
@@ -20,56 +24,58 @@ const tabs: { key: AttendanceState | 'all'; label: string }[] = [
   { key: 'clocked_out', label: 'Done' },
 ]
 
-function formatHour(h: number): string {
-  const suf = h >= 12 ? 'PM' : 'AM'
-  const hr = h === 0 ? 12 : h > 12 ? h - 12 : h
-  return `${hr}:00 ${suf}`
+function formatHHmm(iso?: string | null): string {
+  if (!iso) return '—'
+  const d = new Date(iso)
+  return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })
 }
 
-function formatHHmm(t?: string): string {
-  if (!t) return '—'
-  const [hh, mm] = t.split(':').map(Number)
-  const suf = hh >= 12 ? 'PM' : 'AM'
-  const hr = hh === 0 ? 12 : hh > 12 ? hh - 12 : hh
-  return `${hr}:${String(mm).padStart(2, '0')} ${suf}`
-}
-
-function formatHours(min?: number): string {
-  if (!min) return '—'
+function formatHours(min?: number | null): string {
+  if (min === null || min === undefined || min === 0) return '—'
   const h = Math.floor(min / 60)
   const m = min % 60
   return `${h}h ${String(m).padStart(2, '0')}m`
 }
 
 export function AttendancePage() {
-  const [selectedStore, setSelectedStore] = useState('main')
+  const today = new Date().toISOString().slice(0, 10)
+  const [selectedStore, setSelectedStore] = useState<string>('')
   const [tab, setTab] = useState<AttendanceState | 'all'>('all')
-  const [date] = useState(today)
+  const [date, setDate] = useState(today)
 
-  const rows = useMemo(() => {
-    const todays = attendances.filter(a => a.date === date)
-    return todays
-      .map(a => {
-        const sch = schedules.find(s => s.id === a.scheduleId)
-        const st = staff.find(x => x.id === a.staffId)
-        if (!sch || !st || sch.storeId !== selectedStore) return null
-        return { att: a, sch, st }
-      })
-      .filter((x): x is NonNullable<typeof x> => x !== null)
-  }, [date, selectedStore])
+  const storesQ = useStores()
+  const stores = storesQ.data ?? []
+
+  // 첫 store 자동 선택
+  if (selectedStore === '' && stores.length > 0) {
+    setSelectedStore(stores[0]!.id)
+  }
+
+  const attendancesQ = useAttendances({
+    store_id: selectedStore || undefined,
+    work_date: date,
+    per_page: 200,
+  })
+  const records = attendancesQ.data?.items ?? []
 
   const filtered = useMemo(() => {
-    if (tab === 'all') return rows
-    return rows.filter(r => r.att.state === tab)
-  }, [rows, tab])
+    if (tab === 'all') return records
+    return records.filter((r) => r.status === tab)
+  }, [records, tab])
 
   const stats = useMemo(() => ({
-    scheduled: rows.length,
-    working: rows.filter(r => r.att.state === 'working').length,
-    onBreak: rows.filter(r => r.att.state === 'on_break').length,
-    late: rows.filter(r => r.att.state === 'late').length,
-    noShow: rows.filter(r => r.att.state === 'no_show').length,
-  }), [rows])
+    scheduled: records.length,
+    working: records.filter((r) => r.status === 'working').length,
+    onBreak: records.filter((r) => r.status === 'on_break').length,
+    late: records.filter((r) => r.status === 'late').length,
+    noShow: records.filter((r) => r.status === 'no_show').length,
+  }), [records])
+
+  function shiftDate(days: number) {
+    const d = new Date(date)
+    d.setDate(d.getDate() + days)
+    setDate(d.toISOString().slice(0, 10))
+  }
 
   return (
     <div>
@@ -88,13 +94,19 @@ export function AttendancePage() {
       <div className="flex items-center justify-between py-2 gap-3 flex-wrap">
         <div className="flex items-center gap-3">
           <h1 className="text-[22px] font-semibold text-[var(--color-text)]">Attendance</h1>
+          {attendancesQ.isLoading && <span className="text-[11px] text-[var(--color-text-muted)]">Loading…</span>}
         </div>
         <div className="flex items-center gap-2">
-          <button className="w-8 h-8 rounded-lg border border-[var(--color-border)] bg-white flex items-center justify-center text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-hover)]" aria-label="Previous day">
+          <button type="button" onClick={() => shiftDate(-1)} className="w-8 h-8 rounded-lg border border-[var(--color-border)] bg-white flex items-center justify-center text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-hover)]" aria-label="Previous day">
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><polyline points="9 11 5 7 9 3"/></svg>
           </button>
-          <span className="text-[13px] font-semibold text-[var(--color-text)] min-w-[140px] text-center">Tue, Apr 7, 2026</span>
-          <button className="w-8 h-8 rounded-lg border border-[var(--color-border)] bg-white flex items-center justify-center text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-hover)]" aria-label="Next day">
+          <input
+            type="date"
+            value={date}
+            onChange={e => setDate(e.target.value)}
+            className="px-2 py-1 border border-[var(--color-border)] rounded-lg text-[13px] font-semibold text-[var(--color-text)] min-w-[140px] text-center"
+          />
+          <button type="button" onClick={() => shiftDate(1)} className="w-8 h-8 rounded-lg border border-[var(--color-border)] bg-white flex items-center justify-center text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-hover)]" aria-label="Next day">
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><polyline points="5 3 9 7 5 11"/></svg>
           </button>
         </div>
@@ -114,6 +126,7 @@ export function AttendancePage() {
         {tabs.map(t => (
           <button
             key={t.key}
+            type="button"
             onClick={() => setTab(t.key)}
             className={`px-3 py-1.5 rounded-lg text-[12px] font-semibold whitespace-nowrap transition-colors ${
               tab === t.key
@@ -132,45 +145,36 @@ export function AttendancePage() {
           <thead>
             <tr className="border-b border-[var(--color-border)] bg-[var(--color-bg)]">
               <th className="text-left px-4 py-2.5 text-[11px] font-bold uppercase tracking-wider text-[var(--color-text-muted)]">Employee</th>
-              <th className="text-left px-3 py-2.5 text-[11px] font-bold uppercase tracking-wider text-[var(--color-text-muted)]">Scheduled</th>
               <th className="text-left px-3 py-2.5 text-[11px] font-bold uppercase tracking-wider text-[var(--color-text-muted)]">Clock In</th>
               <th className="text-left px-3 py-2.5 text-[11px] font-bold uppercase tracking-wider text-[var(--color-text-muted)]">Clock Out</th>
               <th className="text-left px-3 py-2.5 text-[11px] font-bold uppercase tracking-wider text-[var(--color-text-muted)]">Hours</th>
               <th className="text-left px-3 py-2.5 text-[11px] font-bold uppercase tracking-wider text-[var(--color-text-muted)]">Status</th>
               <th className="text-left px-3 py-2.5 text-[11px] font-bold uppercase tracking-wider text-[var(--color-text-muted)]">Anomalies</th>
-              <th className="text-right px-4 py-2.5 text-[11px] font-bold uppercase tracking-wider text-[var(--color-text-muted)]">Actions</th>
             </tr>
           </thead>
           <tbody>
-            {filtered.length === 0 && (
+            {filtered.length === 0 && !attendancesQ.isLoading && (
               <tr>
-                <td colSpan={8} className="text-center py-12 text-[12px] text-[var(--color-text-muted)] italic">No records match this filter</td>
+                <td colSpan={6} className="text-center py-12 text-[12px] text-[var(--color-text-muted)] italic">No records match this filter</td>
               </tr>
             )}
-            {filtered.map(({ att, sch, st }) => {
-              const meta = stateMeta[att.state]
-              const schedHours = sch.endHour - sch.startHour
+            {filtered.map((att) => {
+              const meta = stateMeta[att.status] ?? stateMeta.not_yet
+              const anomalies = att.anomalies ?? []
+              const initials = (att.user_name || '??').split(/\s+/).slice(0, 2).map((s: string) => s[0] ?? '').join('').toUpperCase() || '??'
               return (
-                <tr key={att.id} className="border-b border-[var(--color-border)] last:border-b-0 group hover:bg-[var(--color-surface-hover)] transition-colors">
+                <tr key={att.id} className="border-b border-[var(--color-border)] last:border-b-0 hover:bg-[var(--color-surface-hover)] transition-colors">
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-3">
-                      <div className={`w-8 h-8 rounded-full flex items-center justify-center text-[11px] font-bold shrink-0 ${roleColors[st.role]}`}>{st.initials}</div>
+                      <div className={`w-8 h-8 rounded-full flex items-center justify-center text-[11px] font-bold shrink-0 ${roleColors.staff}`}>{initials}</div>
                       <div className="min-w-0">
-                        <div className="text-[13px] font-semibold text-[var(--color-text)] truncate">{st.name}</div>
-                        <div className="text-[10px] text-[var(--color-text-muted)]">
-                          <span className={st.role === 'gm' ? 'text-[var(--color-accent)] font-semibold' : st.role === 'sv' ? 'text-[var(--color-warning)] font-semibold' : 'font-semibold'}>{roleLabels[st.role]}</span>
-                          {' · '}{st.position}
-                        </div>
+                        <div className="text-[13px] font-semibold text-[var(--color-text)] truncate">{att.user_name ?? '—'}</div>
                       </div>
                     </div>
                   </td>
-                  <td className="px-3 py-3">
-                    <div className="text-[12px] font-semibold text-[var(--color-text)]">{formatHour(sch.startHour)}–{formatHour(sch.endHour)}</div>
-                    <div className="text-[10px] text-[var(--color-text-muted)]">{sch.shift} · {schedHours}h</div>
-                  </td>
-                  <td className="px-3 py-3 text-[12px] tabular-nums text-[var(--color-text)]">{formatHHmm(att.clockIn)}</td>
-                  <td className="px-3 py-3 text-[12px] tabular-nums text-[var(--color-text)]">{formatHHmm(att.clockOut)}</td>
-                  <td className="px-3 py-3 text-[12px] tabular-nums font-semibold text-[var(--color-text)]">{formatHours(att.actualMinutes)}</td>
+                  <td className="px-3 py-3 text-[12px] tabular-nums text-[var(--color-text)]">{formatHHmm(att.clock_in)}</td>
+                  <td className="px-3 py-3 text-[12px] tabular-nums text-[var(--color-text)]">{formatHHmm(att.clock_out)}</td>
+                  <td className="px-3 py-3 text-[12px] tabular-nums font-semibold text-[var(--color-text)]">{formatHours(att.net_work_minutes ?? att.total_work_minutes)}</td>
                   <td className="px-3 py-3">
                     <span className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-[11px] font-semibold ${meta.bg} ${meta.text}`}>
                       <span className={`w-1.5 h-1.5 rounded-full ${meta.dot}`} />
@@ -179,21 +183,13 @@ export function AttendancePage() {
                   </td>
                   <td className="px-3 py-3">
                     <div className="flex flex-wrap gap-1">
-                      {att.anomalies.length === 0 && <span className="text-[11px] text-[var(--color-text-muted)]">—</span>}
-                      {att.anomalies.map(a => (
+                      {anomalies.length === 0 && <span className="text-[11px] text-[var(--color-text-muted)]">—</span>}
+                      {anomalies.map((a: string) => (
                         <span key={a} className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-[var(--color-danger-muted)] text-[var(--color-danger)]">
                           {a.replace('_', ' ')}
                         </span>
                       ))}
                     </div>
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    <button
-                      type="button"
-                      className="opacity-0 group-hover:opacity-100 transition-opacity px-2.5 py-1 rounded-md text-[11px] font-semibold border border-[var(--color-border)] hover:bg-white text-[var(--color-text-secondary)]"
-                    >
-                      Edit
-                    </button>
                   </td>
                 </tr>
               )
