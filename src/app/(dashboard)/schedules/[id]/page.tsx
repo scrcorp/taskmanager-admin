@@ -1,188 +1,50 @@
 "use client";
 
 /**
- * 스케줄 상세 페이지 -- 스케줄 정보를 표시합니다.
- * 체크리스트 리뷰는 /checklists/progress 에서 진행.
+ * 스케줄 상세 페이지 — 목업 리디자인 이관.
  *
- * Schedule detail page showing schedule info.
- * Checklist review moved to /checklists/progress.
+ * Schedule detail with snapshot vs current, attendance comparison,
+ * cost breakdown (GM only), audit timeline, cancel/reject reason banner.
  */
 
-import React, { useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ChevronLeft, Trash2, Clock, Calendar, MapPin, User, Briefcase } from "lucide-react";
-import { useSchedule, useDeleteSchedule } from "@/hooks/useSchedules";
-import { Button, Card, Badge, LoadingSpinner, EmptyState, ConfirmDialog } from "@/components/ui";
-import { useToast } from "@/components/ui/Toast";
-import { formatFixedDate, parseApiError } from "@/lib/utils";
+import { ScheduleDetailPage } from "@/components/schedules/redesign/ScheduleDetailPage";
+import { schedules, staff } from "@/components/schedules/redesign/mockData";
 
-const statusBadgeVariant: Record<string, "default" | "success" | "danger"> = {
-  confirmed: "success",
-  cancelled: "danger",
-};
-const statusLabel: Record<string, string> = {
-  confirmed: "Confirmed",
-  cancelled: "Cancelled",
-};
-
-export default function ScheduleDetailPage(): React.ReactElement {
-  const params = useParams();
+export default function SchedulesDetailPage() {
+  const params = useParams<{ id: string }>();
   const router = useRouter();
-  const { toast } = useToast();
+  const id = params.id;
 
-  const scheduleId: string = params.id as string;
-  const { data: schedule, isLoading } = useSchedule(scheduleId);
-  const deleteSchedule = useDeleteSchedule();
+  const block = schedules.find((s) => s.id === id);
+  const st = block ? staff.find((x) => x.id === block.staffId) : null;
 
-  const [isDeleteOpen, setIsDeleteOpen] = useState(false);
-
-  const handleDelete = useCallback(() => {
-    deleteSchedule.mutate(scheduleId, {
-      onSuccess: () => {
-        toast({ type: "success", message: "스케줄이 삭제되었습니다." });
-        router.push("/schedules");
-      },
-      onError: (err) => {
-        toast({ type: "error", message: parseApiError(err, "스케줄 삭제에 실패했습니다.") });
-      },
-    });
-  }, [scheduleId, deleteSchedule, toast, router]);
-
-  if (isLoading) {
+  if (!block || !st) {
     return (
-      <div className="flex items-center justify-center py-20">
-        <LoadingSpinner size="lg" />
+      <div className="py-8 text-center text-[var(--color-text-muted)]">
+        Schedule not found
       </div>
     );
   }
-
-  if (!schedule) {
-    return (
-      <div>
-        <Button variant="ghost" size="sm" onClick={() => router.back()}>
-          <ChevronLeft size={16} />
-          Back to Schedules
-        </Button>
-        <EmptyState message="Schedule not found." />
-      </div>
-    );
-  }
-
-  const formatTime = (t: string | null) => {
-    if (!t) return "-";
-    return t.slice(0, 5);
-  };
-
-  const timeRange = schedule.start_time || schedule.end_time
-    ? `${formatTime(schedule.start_time)} ~ ${formatTime(schedule.end_time)}`
-    : "-";
-
-  const breakRange = schedule.break_start_time || schedule.break_end_time
-    ? `${formatTime(schedule.break_start_time)} ~ ${formatTime(schedule.break_end_time)}`
-    : "-";
-
-  const workHours = schedule.net_work_minutes > 0
-    ? `${Math.floor(schedule.net_work_minutes / 60)}h ${schedule.net_work_minutes % 60}m`
-    : "-";
 
   return (
-    <div>
-      <Button variant="ghost" size="sm" className="mb-4" onClick={() => router.back()}>
-        <ChevronLeft size={16} />
-        Back to Schedules
-      </Button>
-
-      {/* Schedule Summary */}
-      <Card className="mb-6">
-        <div className="flex items-start justify-between mb-4">
-          <h1 className="text-xl font-bold text-text">Schedule Detail</h1>
-          <div className="flex items-center gap-2">
-            <Badge variant={statusBadgeVariant[schedule.status] ?? "default"}>
-              {statusLabel[schedule.status] ?? schedule.status}
-            </Badge>
-            {schedule.status !== "cancelled" && (
-              <Button variant="danger" size="sm" onClick={() => setIsDeleteOpen(true)}>
-                <Trash2 size={14} />
-                Delete
-              </Button>
-            )}
-          </div>
-        </div>
-
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-          <div className="flex items-start gap-2">
-            <User size={14} className="text-text-muted mt-0.5 shrink-0" />
-            <div>
-              <p className="text-xs text-text-muted mb-1">Worker</p>
-              <p className="text-sm font-medium text-text">{schedule.user_name ?? "-"}</p>
-            </div>
-          </div>
-          <div className="flex items-start gap-2">
-            <MapPin size={14} className="text-text-muted mt-0.5 shrink-0" />
-            <div>
-              <p className="text-xs text-text-muted mb-1">Store</p>
-              <p className="text-sm font-medium text-text">{schedule.store_name ?? "-"}</p>
-            </div>
-          </div>
-          <div className="flex items-start gap-2">
-            <Briefcase size={14} className="text-text-muted mt-0.5 shrink-0" />
-            <div>
-              <p className="text-xs text-text-muted mb-1">Work Role</p>
-              <p className="text-sm font-medium text-text">{schedule.work_role_name ?? "-"}</p>
-            </div>
-          </div>
-          <div className="flex items-start gap-2">
-            <Calendar size={14} className="text-text-muted mt-0.5 shrink-0" />
-            <div>
-              <p className="text-xs text-text-muted mb-1">Date</p>
-              <p className="text-sm font-medium text-text">{formatFixedDate(schedule.work_date)}</p>
-            </div>
-          </div>
-          <div className="flex items-start gap-2">
-            <Clock size={14} className="text-text-muted mt-0.5 shrink-0" />
-            <div>
-              <p className="text-xs text-text-muted mb-1">Work Time</p>
-              <p className="text-sm font-medium text-text">{timeRange}</p>
-            </div>
-          </div>
-          <div className="flex items-start gap-2">
-            <Clock size={14} className="text-text-muted mt-0.5 shrink-0" />
-            <div>
-              <p className="text-xs text-text-muted mb-1">Net Work</p>
-              <p className="text-sm font-medium text-text">{workHours}</p>
-            </div>
-          </div>
-        </div>
-
-        {/* Break time & note */}
-        {(breakRange !== "-" || schedule.note) && (
-          <div className="mt-4 pt-4 border-t border-border grid grid-cols-2 md:grid-cols-3 gap-4">
-            {breakRange !== "-" && (
-              <div>
-                <p className="text-xs text-text-muted mb-1">Break Time</p>
-                <p className="text-sm text-text">{breakRange}</p>
-              </div>
-            )}
-            {schedule.note && (
-              <div className="col-span-2">
-                <p className="text-xs text-text-muted mb-1">Note</p>
-                <p className="text-sm text-text">{schedule.note}</p>
-              </div>
-            )}
-          </div>
-        )}
-
-      </Card>
-
-      <ConfirmDialog
-        isOpen={isDeleteOpen}
-        onClose={() => setIsDeleteOpen(false)}
-        onConfirm={handleDelete}
-        title="Delete Schedule"
-        message="Are you sure you want to delete this schedule? This action cannot be undone."
-        confirmLabel="Delete"
-        isLoading={deleteSchedule.isPending}
-      />
-    </div>
+    <ScheduleDetailPage
+      block={block}
+      staff={st}
+      showCost={true}
+      onBack={() => router.push("/schedules")}
+      onEdit={() => {
+        // TODO Task 8d: open edit modal via API
+      }}
+      onSwap={() => {
+        // TODO Task 8d
+      }}
+      onRevert={() => {
+        // TODO Task 8d
+      }}
+      onDelete={() => {
+        // TODO Task 8d
+      }}
+    />
   );
 }
