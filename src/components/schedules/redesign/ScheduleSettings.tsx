@@ -217,47 +217,41 @@ interface CardProps {
 }
 
 function Card({ title, subtitle, locked, inheritState, children }: CardProps) {
-  const showInheritBar = inheritState !== undefined && !locked;
+  const showInheritToggle = inheritState !== undefined && !locked;
+  // Custom 상태 = isInherited === false
+  const isCustom = inheritState && !inheritState.isInherited;
   return (
     <div className="bg-white border border-[var(--color-border)] rounded-xl overflow-hidden">
-      <div className="px-5 py-3 border-b border-[var(--color-border)] bg-[var(--color-bg)]/50">
-        <div className="flex items-center gap-2">
-          <h2 className="text-[13px] font-bold text-[var(--color-text)]">{title}</h2>
-          {locked && (
-            <span className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-[var(--color-danger-muted)] text-[var(--color-danger)]">
-              Locked by Org
-            </span>
-          )}
-          {inheritState && !locked && (
-            <span className={`text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded ${inheritState.isInherited ? "bg-[var(--color-bg)] text-[var(--color-text-muted)]" : "bg-[var(--color-accent-muted)] text-[var(--color-accent)]"}`}>
-              {inheritState.isInherited ? "Inherited" : "Custom"}
-            </span>
-          )}
-        </div>
-        {subtitle && <p className="text-[11px] text-[var(--color-text-muted)] mt-0.5">{subtitle}</p>}
-      </div>
-
-      {/* Inherit toggle bar (store scope, not locked) */}
-      {showInheritBar && (
-        <div className="flex items-center justify-between px-5 py-2.5 border-b border-[var(--color-border)] bg-[var(--color-bg)]/30">
-          <div>
-            <div className="text-[12px] font-semibold text-[var(--color-text)]">
-              Inherit from {inheritState.parentLabel ?? "Organization"}
-            </div>
-            <div className="text-[11px] text-[var(--color-text-muted)]">
-              {inheritState.isInherited ? "Using parent settings. Toggle off to customize." : "Custom override active. Toggle on to use parent."}
-            </div>
+      <div className="px-5 py-3 border-b border-[var(--color-border)] bg-[var(--color-bg)]/50 flex items-center gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <h2 className="text-[13px] font-bold text-[var(--color-text)]">{title}</h2>
+            {locked && (
+              <span className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-[var(--color-danger-muted)] text-[var(--color-danger)]">
+                Locked by Org
+              </span>
+            )}
           </div>
+          {subtitle && <p className="text-[11px] text-[var(--color-text-muted)] mt-0.5">{subtitle}</p>}
+        </div>
+
+        {/* Compact custom/inherit toggle (store scope, not locked) */}
+        {showInheritToggle && (
           <button
             type="button"
-            onClick={inheritState.onToggle}
-            className={`relative w-10 h-[22px] rounded-full transition-colors duration-150 cursor-pointer ${inheritState.isInherited ? "bg-[var(--color-accent)]" : "bg-[var(--color-border)]"}`}
-            aria-label={inheritState.isInherited ? "Disable inherit (customize)" : "Enable inherit"}
+            onClick={inheritState!.onToggle}
+            className="flex items-center gap-1.5 shrink-0 group"
+            title={isCustom ? "Click to inherit from Organization" : "Click to override at store level"}
           >
-            <span className={`absolute top-[3px] w-4 h-4 rounded-full bg-white shadow-sm transition-transform duration-150 ${inheritState.isInherited ? "left-[22px]" : "left-[3px]"}`} />
+            <span className={`text-[10px] font-bold uppercase tracking-wider transition-colors ${isCustom ? "text-[var(--color-accent)]" : "text-[var(--color-text-muted)] group-hover:text-[var(--color-text-secondary)]"}`}>
+              {isCustom ? "Custom" : "Inherited"}
+            </span>
+            <span className={`relative w-8 h-[18px] rounded-full transition-colors duration-150 ${isCustom ? "bg-[var(--color-accent)]" : "bg-[var(--color-border)]"}`}>
+              <span className={`absolute top-[2px] w-3.5 h-3.5 rounded-full bg-white shadow-sm transition-transform duration-150 ${isCustom ? "left-[16px]" : "left-[2px]"}`} />
+            </span>
           </button>
-        </div>
-      )}
+        )}
+      </div>
 
       <div className={`px-5 py-4 ${inheritState?.isInherited ? "opacity-50 pointer-events-none" : ""}`}>{children}</div>
     </div>
@@ -350,43 +344,46 @@ function WorkHourAlertsSection(props: SectionCommonProps) {
 
   const inheritState = useSectionInherit(props, [NORMAL_KEY, CAUTION_KEY]);
 
-  // ─── 양방향 유기적 제약 (0.5h 단위) ──────────────────
-  // Normal과 Caution은 항상 Normal <= Caution을 만족.
-  // 사용자가 편집 중인 필드는 자유롭게 움직이고, 다른 필드가 따라온다.
+  // ─── 양방향 유기적 제약 (0.5h GAP) ──────────────────
+  // Normal과 Caution은 항상 0.5h 거리를 유지: caution >= normal + 0.5
+  // 사용자가 편집 중인 필드는 자유롭게 움직이고, 상대방이 거리 두며 따라옴.
   //
-  // - Normal을 올려서 Caution을 넘기면 → Caution을 같은 값으로 끌어올림
-  // - Caution을 내려서 Normal보다 낮아지면 → Normal을 같은 값으로 끌어내림
+  // 예:
+  // - Normal=5, Caution=6 → Caution을 5.5로 내리면 Normal=5 (gap 유지)
+  // - Normal=5, Caution=6 → Caution을 4로 내리면 Normal=3.5 (gap 유지)
+  // - Normal=5, Caution=6 → Normal을 6으로 올리면 Caution=6.5 (gap 유지)
+  const GAP = 0.5;
   function handleNormalChange(value: number) {
-    const v = Math.max(0, Math.min(12, value));
+    const v = Math.max(0, Math.min(12 - GAP, value));
     setNormalMax(v);
-    if (cautionMax < v) setCautionMax(v);
+    if (cautionMax < v + GAP) setCautionMax(v + GAP);
   }
 
   function handleCautionChange(value: number) {
-    const v = Math.max(0, Math.min(12, value));
+    const v = Math.max(GAP, Math.min(12, value));
     setCautionMax(v);
-    if (normalMax > v) setNormalMax(v);
+    if (normalMax > v - GAP) setNormalMax(v - GAP);
   }
 
   function commitNormal() {
-    if (cautionMax < normalMax) {
-      // Normal이 caution을 넘김 → caution을 같은 값으로
-      setCautionMax(normalMax);
-      save(NORMAL_KEY, normalMax);
-      save(CAUTION_KEY, normalMax);
+    save(NORMAL_KEY, normalMax);
+    if (cautionMax < normalMax + GAP) {
+      const adjusted = normalMax + GAP;
+      setCautionMax(adjusted);
+      save(CAUTION_KEY, adjusted);
     } else {
-      save(NORMAL_KEY, normalMax);
+      save(CAUTION_KEY, cautionMax);
     }
   }
 
   function commitCaution() {
-    if (normalMax > cautionMax) {
-      // Caution이 normal보다 낮음 → normal을 같은 값으로
-      setNormalMax(cautionMax);
-      save(CAUTION_KEY, cautionMax);
-      save(NORMAL_KEY, cautionMax);
+    save(CAUTION_KEY, cautionMax);
+    if (normalMax > cautionMax - GAP) {
+      const adjusted = cautionMax - GAP;
+      setNormalMax(adjusted);
+      save(NORMAL_KEY, adjusted);
     } else {
-      save(CAUTION_KEY, cautionMax);
+      save(NORMAL_KEY, normalMax);
     }
   }
 
@@ -490,38 +487,39 @@ function WeeklyLimitsSection(props: SectionCommonProps) {
 
   const inheritState = useSectionInherit(props, [LIMIT_KEY, WARN_KEY]);
 
-  // 양방향: warning <= limit
-  // - Limit을 내려서 Warning보다 낮아지면 → Warning도 같이 내려감
-  // - Warning을 올려서 Limit을 넘기면 → Limit도 같이 올라감
+  // 양방향 + 1h gap: warning < limit (warning은 limit보다 최소 1h 작아야 함)
+  const GAP = 1;
   function handleLimitChange(value: number) {
-    const v = Math.max(1, Math.min(168, value));
+    const v = Math.max(1 + GAP, Math.min(168, value));
     setLimit(v);
-    if (warn > v) setWarn(v);
+    if (warn > v - GAP) setWarn(v - GAP);
   }
 
   function handleWarnChange(value: number) {
-    const v = Math.max(0, Math.min(168, value));
+    const v = Math.max(0, Math.min(168 - GAP, value));
     setWarn(v);
-    if (limit < v) setLimit(v);
+    if (limit < v + GAP) setLimit(v + GAP);
   }
 
   function commitLimit() {
-    if (warn > limit) {
-      setWarn(limit);
-      save(LIMIT_KEY, limit);
-      save(WARN_KEY, limit);
+    save(LIMIT_KEY, limit);
+    if (warn > limit - GAP) {
+      const adjusted = limit - GAP;
+      setWarn(adjusted);
+      save(WARN_KEY, adjusted);
     } else {
-      save(LIMIT_KEY, limit);
+      save(WARN_KEY, warn);
     }
   }
 
   function commitWarn() {
-    if (limit < warn) {
-      setLimit(warn);
-      save(WARN_KEY, warn);
-      save(LIMIT_KEY, warn);
+    save(WARN_KEY, warn);
+    if (limit < warn + GAP) {
+      const adjusted = warn + GAP;
+      setLimit(adjusted);
+      save(LIMIT_KEY, adjusted);
     } else {
-      save(WARN_KEY, warn);
+      save(LIMIT_KEY, limit);
     }
   }
 
