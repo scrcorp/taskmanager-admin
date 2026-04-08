@@ -12,8 +12,9 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useSchedules, useConfirmSchedule, useRejectSchedule, useDeleteSchedule, useSubmitSchedule, useRevertSchedule, useCancelSchedule, useCreateSchedule, useUpdateSchedule, useSwapSchedule } from "@/hooks/useSchedules";
 import { useUsers } from "@/hooks/useUsers";
 import { useStores } from "@/hooks/useStores";
+import { useOrganization } from "@/hooks/useOrganization";
 import { useAttendances } from "@/hooks/useAttendances";
-import type { Schedule, User } from "@/types";
+import type { Schedule, Store, User } from "@/types";
 import { ScheduleBlock } from "./ScheduleBlock";
 import { StatsHeader } from "./StatsHeader";
 import { ContextMenu } from "./ContextMenu";
@@ -99,6 +100,21 @@ function getInitials(name: string | null | undefined): string {
   return ((parts[0]![0] ?? "") + (parts[parts.length - 1]![0] ?? "")).toUpperCase();
 }
 
+/**
+ * Effective hourly rate cascade: user → store → org
+ * 현재 context의 store 기준으로 계산 (staff sidebar에서 현재 선택된 매장).
+ */
+function effectiveRate(
+  user: User | undefined,
+  store: Store | undefined,
+  orgDefault: number | null | undefined,
+): number | null {
+  if (user?.hourly_rate != null) return user.hourly_rate;
+  if (store?.default_hourly_rate != null) return store.default_hourly_rate;
+  if (orgDefault != null) return orgDefault;
+  return null;
+}
+
 // ─── Component ──────────────────────────────────────────
 
 export default function SchedulesCalendarView() {
@@ -131,6 +147,8 @@ export default function SchedulesCalendarView() {
   const dateTo = weekDates[6]?.date;
   const usersQ = useUsers();
   const storesQ = useStores();
+  const orgQ = useOrganization();
+  const orgDefaultRate = orgQ.data?.default_hourly_rate ?? null;
   const schedulesQ = useSchedules({
     store_id: selectedStore || undefined,
     date_from: dateFrom,
@@ -272,7 +290,7 @@ export default function SchedulesCalendarView() {
     const sumLabor = (arr: Schedule[]) => arr.reduce((sum, s) => {
       const hrs = Math.max(0, parseTimeToHours(s.end_time) - parseTimeToHours(s.start_time));
       const u = users.find((x) => x.id === s.user_id);
-      const rate = s.hourly_rate || u?.effective_hourly_rate || u?.hourly_rate || 0;
+      const rate = s.hourly_rate || effectiveRate(u, currentStore, orgDefaultRate) || 0;
       return sum + hrs * rate;
     }, 0);
     return {
@@ -302,7 +320,7 @@ export default function SchedulesCalendarView() {
     const pending = daySchedules.filter((s) => s.status === "requested");
     const sumLabor = (arr: Schedule[]) => arr.reduce((sum, s) => {
       const u = users.find((x) => x.id === s.user_id);
-      return sum + (s.hourly_rate || u?.effective_hourly_rate || u?.hourly_rate || 0);
+      return sum + (s.hourly_rate || effectiveRate(u, currentStore, orgDefaultRate) || 0);
     }, 0);
     return {
       key: `h${h}`,
@@ -338,7 +356,7 @@ export default function SchedulesCalendarView() {
     const sumLabor = (arr: Schedule[]) => arr.reduce((s, b) => {
       const u = users.find((x) => x.id === b.user_id);
       const hrs = Math.max(0, parseTimeToHours(b.end_time) - parseTimeToHours(b.start_time));
-      return s + hrs * (b.hourly_rate || u?.effective_hourly_rate || u?.hourly_rate || 0);
+      return s + hrs * (b.hourly_rate || effectiveRate(u, currentStore, orgDefaultRate) || 0);
     }, 0);
     return {
       hc: sumHours(conf),
@@ -722,7 +740,11 @@ export default function SchedulesCalendarView() {
               />
 
               <tbody>
-                {sortedUsers.map((u: User) => (
+                {sortedUsers.map((u: User) => {
+                  // Effective rate cascade: user → current store → org
+                  const userEffective = effectiveRate(u, currentStore, orgDefaultRate);
+                  const isUserCustom = u.hourly_rate != null;
+                return (
                   <tr key={u.id} className="border-b border-[var(--color-border)] last:border-b-0 hover:bg-[var(--color-surface-hover)] transition-[background-color] duration-100">
                     <td className="px-4 py-3 border-r-2 border-[var(--color-border)]">
                       <div className="flex items-center gap-3">
@@ -731,8 +753,8 @@ export default function SchedulesCalendarView() {
                           <div className="text-[13px] font-semibold text-[var(--color-text)] truncate">{u.full_name || u.username}</div>
                           <div className="text-[10px] text-[var(--color-text-muted)]">
                             <span className={u.role_priority <= 20 ? "text-[var(--color-accent)] font-semibold" : u.role_priority <= 30 ? "text-[var(--color-warning)] font-semibold" : "font-semibold"}>{rolePriorityToBadge(u.role_priority)}</span>
-                            {isGMView && (u.effective_hourly_rate ?? u.hourly_rate) ? ` · $${u.effective_hourly_rate ?? u.hourly_rate}/hr${u.hourly_rate ? "" : " (inherited)"}` : null}
-                            {isGMView && !u.effective_hourly_rate && !u.hourly_rate && <span className="text-[var(--color-danger)]"> · No rate</span>}
+                            {isGMView && userEffective != null ? ` · $${userEffective}/hr${isUserCustom ? "" : " (inherited)"}` : null}
+                            {isGMView && userEffective == null && <span className="text-[var(--color-danger)]"> · No rate</span>}
                           </div>
                         </div>
                       </div>
@@ -763,9 +785,9 @@ export default function SchedulesCalendarView() {
                                   className="h-full min-h-[44px] flex items-center justify-center opacity-0 hover:opacity-40 transition-opacity cursor-pointer"
                                   role="button"
                                   onClick={() => openAddModal(u.id, day.date)}
-                                  title={!u.effective_hourly_rate && !u.hourly_rate ? "Warning: this user has no hourly rate" : undefined}
+                                  title={userEffective == null ? "Warning: this user has no hourly rate" : undefined}
                                 >
-                                  {!u.effective_hourly_rate && !u.hourly_rate ? (
+                                  {userEffective == null ? (
                                     <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
                                       <path d="M7 4v3m0 2.5h.01M2.5 11.5h9a1 1 0 00.87-1.5L8.37 3a1 1 0 00-1.74 0L2.63 10a1 1 0 00.87 1.5z" stroke="var(--color-warning)" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
                                     </svg>
@@ -828,9 +850,9 @@ export default function SchedulesCalendarView() {
                           return <div className="flex flex-col items-center">
                             <span className="text-[13px] font-bold text-[var(--color-success)]">{ch}h</span>
                             {ph > 0 && <span className="text-[10px] font-semibold text-[var(--color-warning)]">+{ph}h</span>}
-                            {isGMView && (u.effective_hourly_rate ?? u.hourly_rate) ? <span className="text-[10px] text-[var(--color-success)]">${ch * (u.effective_hourly_rate ?? u.hourly_rate ?? 0)}</span> : null}
-                            {isGMView && (u.effective_hourly_rate ?? u.hourly_rate) && ph > 0 && <span className="text-[10px] text-[var(--color-warning)]">+${ph * (u.effective_hourly_rate ?? u.hourly_rate ?? 0)}</span>}
-                            {isGMView && !u.effective_hourly_rate && !u.hourly_rate && <span className="text-[10px] text-[var(--color-danger)]">N/A</span>}
+                            {isGMView && userEffective != null ? <span className="text-[10px] text-[var(--color-success)]">${ch * userEffective}</span> : null}
+                            {isGMView && userEffective != null && ph > 0 && <span className="text-[10px] text-[var(--color-warning)]">+${ph * userEffective}</span>}
+                            {isGMView && userEffective == null && <span className="text-[10px] text-[var(--color-danger)]">N/A</span>}
                           </div>;
                         })()
                       ) : (
@@ -847,7 +869,8 @@ export default function SchedulesCalendarView() {
                       )}
                     </td>
                   </tr>
-                ))}
+                );
+                })}
               </tbody>
             </table>
           </div>
