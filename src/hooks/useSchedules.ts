@@ -1,7 +1,29 @@
 import { useQuery, useMutation, useQueryClient, type UseQueryResult, type UseMutationResult } from "@tanstack/react-query";
-import type { AxiosResponse } from "axios";
+import type { AxiosError, AxiosResponse } from "axios";
 import api from "@/lib/api";
+import { useToast } from "@/components/ui/Toast";
 import type { Schedule, ScheduleBulkCreate, ScheduleBulkResult, ScheduleCreate, ScheduleUpdate, PaginatedResponse } from "@/types";
+
+/** FastAPI/Axios error → 사람이 읽을 수 있는 메시지 */
+function extractErrorMessage(err: unknown): string {
+  const ax = err as AxiosError<{ detail?: string | { msg?: string }[] }> | undefined;
+  const detail = ax?.response?.data?.detail;
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail)) {
+    const msgs = detail.map((d) => (typeof d === "string" ? d : d?.msg ?? "")).filter(Boolean);
+    if (msgs.length > 0) return msgs.join("; ");
+  }
+  if (ax?.message) return ax.message;
+  return (err as Error)?.message ?? "Unknown error";
+}
+
+/** mutation에 공통 onError(toast) 부착하기 위한 helper */
+function useErrorToast() {
+  const { toast } = useToast();
+  return (action: string) => (err: unknown) => {
+    toast({ type: "error", message: `${action}: ${extractErrorMessage(err)}` });
+  };
+}
 
 export const useSchedule = (
   id: string | undefined,
@@ -17,11 +39,12 @@ export const useSchedule = (
 };
 
 export const useSchedules = (
-  filters: { store_id?: string; user_id?: string; date_from?: string; date_to?: string; status?: string; page?: number; per_page?: number } = {},
+  filters: { store_id?: string; user_id?: string; user_ids?: string[]; date_from?: string; date_to?: string; status?: string; page?: number; per_page?: number } = {},
 ): UseQueryResult<PaginatedResponse<Schedule>, Error> => {
   const params: Record<string, string | number> = {};
   if (filters.store_id) params.store_id = filters.store_id;
   if (filters.user_id) params.user_id = filters.user_id;
+  if (filters.user_ids && filters.user_ids.length > 0) params.user_ids = filters.user_ids.join(",");
   if (filters.date_from) params.date_from = filters.date_from;
   if (filters.date_to) params.date_to = filters.date_to;
   if (filters.status) params.status = filters.status;
@@ -33,33 +56,39 @@ export const useSchedules = (
       const res: AxiosResponse<PaginatedResponse<Schedule>> = await api.get("/admin/schedules", { params });
       return res.data;
     },
+    enabled: !filters.user_ids || filters.user_ids.length > 0, // user_ids 비어있으면 fetch 막음 (잘못된 전체 조회 방지)
   });
 };
 
 export const useCreateSchedule = (): UseMutationResult<Schedule, Error, ScheduleCreate> => {
   const qc = useQueryClient();
+  const onErr = useErrorToast();
   return useMutation<Schedule, Error, ScheduleCreate>({
     mutationFn: async (data) => {
       const res: AxiosResponse<Schedule> = await api.post("/admin/schedules", data);
       return res.data;
     },
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["schedules"] }); },
+    onError: onErr("Failed to create schedule"),
   });
 };
 
 export const useBulkCreateSchedules = (): UseMutationResult<ScheduleBulkResult, Error, ScheduleBulkCreate> => {
   const qc = useQueryClient();
+  const onErr = useErrorToast();
   return useMutation<ScheduleBulkResult, Error, ScheduleBulkCreate>({
     mutationFn: async (data) => {
       const res: AxiosResponse<ScheduleBulkResult> = await api.post("/admin/schedules/bulk", data);
       return res.data;
     },
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["schedules"] }); },
+    onError: onErr("Failed to bulk create schedules"),
   });
 };
 
 export const useUpdateSchedule = (): UseMutationResult<Schedule, Error, { id: string; data: ScheduleUpdate }> => {
   const qc = useQueryClient();
+  const onErr = useErrorToast();
   return useMutation<Schedule, Error, { id: string; data: ScheduleUpdate }>({
     mutationFn: async ({ id, data }) => {
       const res: AxiosResponse<Schedule> = await api.patch(`/admin/schedules/${id}`, data);
@@ -71,47 +100,56 @@ export const useUpdateSchedule = (): UseMutationResult<Schedule, Error, { id: st
       // 목록 및 audit log 무효화
       qc.invalidateQueries({ queryKey: ["schedules"] });
     },
+    onError: onErr("Failed to update schedule"),
   });
 };
 
 export const useDeleteSchedule = (): UseMutationResult<void, Error, string> => {
   const qc = useQueryClient();
+  const onErr = useErrorToast();
   return useMutation<void, Error, string>({
     mutationFn: async (id) => { await api.delete(`/admin/schedules/${id}`); },
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["schedules"] }); },
+    onError: onErr("Failed to delete schedule"),
   });
 };
 
 export const useGenerateFromRequests = (): UseMutationResult<Schedule[], Error, string> => {
   const qc = useQueryClient();
+  const onErr = useErrorToast();
   return useMutation<Schedule[], Error, string>({
     mutationFn: async (periodId) => {
       const res: AxiosResponse<Schedule[]> = await api.post(`/admin/schedules/generate-from-requests?period_id=${periodId}`);
       return res.data;
     },
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["schedules"] }); },
+    onError: onErr("Failed to generate schedules"),
   });
 };
 
 export const useConfirmSchedule = (): UseMutationResult<Schedule, Error, string> => {
   const qc = useQueryClient();
+  const onErr = useErrorToast();
   return useMutation<Schedule, Error, string>({
     mutationFn: async (id) => {
       const res: AxiosResponse<Schedule> = await api.post(`/admin/schedules/${id}/confirm`);
       return res.data;
     },
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["schedules"] }); },
+    onError: onErr("Failed to confirm schedule"),
   });
 };
 
 export const useRejectSchedule = (): UseMutationResult<Schedule, Error, { id: string; rejection_reason?: string }> => {
   const qc = useQueryClient();
+  const onErr = useErrorToast();
   return useMutation<Schedule, Error, { id: string; rejection_reason?: string }>({
     mutationFn: async ({ id, rejection_reason }) => {
       const res: AxiosResponse<Schedule> = await api.post(`/admin/schedules/${id}/reject`, { rejection_reason: rejection_reason ?? null });
       return res.data;
     },
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["schedules"] }); },
+    onError: onErr("Failed to reject schedule"),
   });
 };
 
@@ -119,39 +157,46 @@ export const useRejectSchedule = (): UseMutationResult<Schedule, Error, { id: st
 
 export const useSubmitSchedule = (): UseMutationResult<Schedule, Error, string> => {
   const qc = useQueryClient();
+  const onErr = useErrorToast();
   return useMutation<Schedule, Error, string>({
     mutationFn: async (id) => {
       const res: AxiosResponse<Schedule> = await api.post(`/admin/schedules/${id}/submit`);
       return res.data;
     },
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["schedules"] }); },
+    onError: onErr("Failed to submit schedule"),
   });
 };
 
 export const useRevertSchedule = (): UseMutationResult<Schedule, Error, string> => {
   const qc = useQueryClient();
+  const onErr = useErrorToast();
   return useMutation<Schedule, Error, string>({
     mutationFn: async (id) => {
       const res: AxiosResponse<Schedule> = await api.post(`/admin/schedules/${id}/revert`);
       return res.data;
     },
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["schedules"] }); },
+    onError: onErr("Failed to revert schedule"),
   });
 };
 
 export const useCancelSchedule = (): UseMutationResult<Schedule, Error, { id: string; cancellation_reason?: string }> => {
   const qc = useQueryClient();
+  const onErr = useErrorToast();
   return useMutation<Schedule, Error, { id: string; cancellation_reason?: string }>({
     mutationFn: async ({ id, cancellation_reason }) => {
       const res: AxiosResponse<Schedule> = await api.post(`/admin/schedules/${id}/cancel`, { cancellation_reason: cancellation_reason ?? null });
       return res.data;
     },
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["schedules"] }); },
+    onError: onErr("Failed to cancel schedule"),
   });
 };
 
 export const useSwapSchedule = (): UseMutationResult<{ a: Schedule; b: Schedule }, Error, { id: string; other_schedule_id: string; reason?: string }> => {
   const qc = useQueryClient();
+  const onErr = useErrorToast();
   return useMutation<{ a: Schedule; b: Schedule }, Error, { id: string; other_schedule_id: string; reason?: string }>({
     mutationFn: async ({ id, other_schedule_id, reason }) => {
       const res: AxiosResponse<{ a: Schedule; b: Schedule }> = await api.post(
@@ -161,6 +206,7 @@ export const useSwapSchedule = (): UseMutationResult<{ a: Schedule; b: Schedule 
       return res.data;
     },
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["schedules"] }); },
+    onError: onErr("Failed to swap schedules"),
   });
 };
 
@@ -192,13 +238,86 @@ export const useScheduleAuditLog = (
   });
 };
 
+// ─── Aggregated history (GM+ only) ─────────────────────────────
+
+export interface ScheduleHistoryItem {
+  id: string;
+  schedule_id: string;
+  event_type: string;
+  actor_id: string | null;
+  actor_name: string | null;
+  actor_role: string | null;
+  timestamp: string;
+  description: string | null;
+  reason: string | null;
+  diff: Record<string, { old: unknown; new: unknown }> | null;
+  // schedule snapshot
+  work_date: string;
+  start_time: string | null;
+  end_time: string | null;
+  user_id: string;
+  user_name: string | null;
+  store_id: string;
+  store_name: string | null;
+  schedule_status: string;
+  work_role_name: string | null;
+}
+
+export interface ScheduleHistoryFilters {
+  store_id?: string;
+  user_id?: string;
+  actor_id?: string;
+  event_type?: string;
+  date_from?: string;
+  date_to?: string;
+  page?: number;
+  per_page?: number;
+}
+
+export const useDeleteScheduleHistoryEntry = (): UseMutationResult<void, Error, string> => {
+  const qc = useQueryClient();
+  const onErr = useErrorToast();
+  return useMutation<void, Error, string>({
+    mutationFn: async (logId) => { await api.delete(`/admin/schedules/history/${logId}`); },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["schedule-history"] });
+      qc.invalidateQueries({ queryKey: ["schedules"] });
+    },
+    onError: onErr("Failed to delete history entry"),
+  });
+};
+
+export const useScheduleHistory = (
+  filters: ScheduleHistoryFilters = {},
+): UseQueryResult<{ items: ScheduleHistoryItem[]; total: number; page: number; per_page: number }, Error> => {
+  const params: Record<string, string | number> = {};
+  if (filters.store_id) params.store_id = filters.store_id;
+  if (filters.user_id) params.user_id = filters.user_id;
+  if (filters.actor_id) params.actor_id = filters.actor_id;
+  if (filters.event_type) params.event_type = filters.event_type;
+  if (filters.date_from) params.date_from = filters.date_from;
+  if (filters.date_to) params.date_to = filters.date_to;
+  if (filters.page) params.page = filters.page;
+  if (filters.per_page) params.per_page = filters.per_page;
+  return useQuery({
+    queryKey: ["schedule-history", params],
+    queryFn: async () => {
+      const res: AxiosResponse<{ items: ScheduleHistoryItem[]; total: number; page: number; per_page: number }> =
+        await api.get("/admin/schedules/history", { params });
+      return res.data;
+    },
+  });
+};
+
 export const useBulkConfirmSchedules = (): UseMutationResult<{ confirmed: number; errors: string[] }, Error, { store_id: string; date_from: string; date_to: string }> => {
   const qc = useQueryClient();
+  const onErr = useErrorToast();
   return useMutation<{ confirmed: number; errors: string[] }, Error, { store_id: string; date_from: string; date_to: string }>({
     mutationFn: async (params) => {
       const res: AxiosResponse<{ confirmed: number; errors: string[] }> = await api.post("/admin/schedules/bulk-confirm", params);
       return res.data;
     },
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["schedules"] }); },
+    onError: onErr("Failed to bulk confirm schedules"),
   });
 };
