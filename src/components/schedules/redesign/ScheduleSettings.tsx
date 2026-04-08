@@ -102,12 +102,40 @@ export function ScheduleSettings({ onBack }: Props) {
     return getEffectiveValue(key);
   }
 
+  /** 값 동등 비교 (primitive + JSON-serializable object) */
+  function valueEqual(a: unknown, b: unknown): boolean {
+    if (a === b) return true;
+    if (a == null || b == null) return false;
+    if (typeof a !== typeof b) return false;
+    return JSON.stringify(a) === JSON.stringify(b);
+  }
+
   function queueChange(key: string, value: unknown) {
-    setDraft((prev) => ({ ...prev, values: { ...prev.values, [key]: value } }));
+    setDraft((prev) => {
+      const effective = getEffectiveValue(key);
+      // 새 값이 effective와 같으면 draft에서 제거 (= 변경 없음으로 처리)
+      if (valueEqual(value, effective)) {
+        if (!(key in prev.values)) return prev; // 이미 없음
+        const next = { ...prev.values };
+        delete next[key];
+        return { ...prev, values: next };
+      }
+      // 다르면 draft에 set (이미 같은 값이면 no-op)
+      if (valueEqual(prev.values[key], value)) return prev;
+      return { ...prev, values: { ...prev.values, [key]: value } };
+    });
   }
 
   function queueDayStart(value: Record<string, string>) {
-    setDraft((prev) => ({ ...prev, dayStart: value }));
+    setDraft((prev) => {
+      const serverValue = activeStore?.day_start_time as Record<string, string> | null;
+      if (serverValue && valueEqual(value, serverValue)) {
+        if (prev.dayStart === null) return prev;
+        return { ...prev, dayStart: null };
+      }
+      if (valueEqual(prev.dayStart, value)) return prev;
+      return { ...prev, dayStart: value };
+    });
   }
 
   function getDayStartDraft(): Record<string, string> | null {
