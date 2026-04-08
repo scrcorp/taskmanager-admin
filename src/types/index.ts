@@ -145,7 +145,10 @@ export interface User {
   phone: string | null;
   role_name: string;
   role_priority: number;
+  /** 개인 시급 raw — null이면 상속 (DB에 설정된 값 그대로) */
   hourly_rate: number | null;
+  /** effective 시급 — user.hourly_rate ?? organization.default_hourly_rate. 서버에서 계산. */
+  effective_hourly_rate?: number | null;
   is_active: boolean;
   created_at: string;
 }

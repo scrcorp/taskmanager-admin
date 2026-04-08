@@ -272,7 +272,7 @@ export default function SchedulesCalendarView() {
     const sumLabor = (arr: Schedule[]) => arr.reduce((sum, s) => {
       const hrs = Math.max(0, parseTimeToHours(s.end_time) - parseTimeToHours(s.start_time));
       const u = users.find((x) => x.id === s.user_id);
-      const rate = s.hourly_rate || u?.hourly_rate || 0;
+      const rate = s.hourly_rate || u?.effective_hourly_rate || u?.hourly_rate || 0;
       return sum + hrs * rate;
     }, 0);
     return {
@@ -302,7 +302,7 @@ export default function SchedulesCalendarView() {
     const pending = daySchedules.filter((s) => s.status === "requested");
     const sumLabor = (arr: Schedule[]) => arr.reduce((sum, s) => {
       const u = users.find((x) => x.id === s.user_id);
-      return sum + (s.hourly_rate || u?.hourly_rate || 0);
+      return sum + (s.hourly_rate || u?.effective_hourly_rate || u?.hourly_rate || 0);
     }, 0);
     return {
       key: `h${h}`,
@@ -338,7 +338,7 @@ export default function SchedulesCalendarView() {
     const sumLabor = (arr: Schedule[]) => arr.reduce((s, b) => {
       const u = users.find((x) => x.id === b.user_id);
       const hrs = Math.max(0, parseTimeToHours(b.end_time) - parseTimeToHours(b.start_time));
-      return s + hrs * (b.hourly_rate || u?.hourly_rate || 0);
+      return s + hrs * (b.hourly_rate || u?.effective_hourly_rate || u?.hourly_rate || 0);
     }, 0);
     return {
       hc: sumHours(conf),
@@ -731,8 +731,8 @@ export default function SchedulesCalendarView() {
                           <div className="text-[13px] font-semibold text-[var(--color-text)] truncate">{u.full_name || u.username}</div>
                           <div className="text-[10px] text-[var(--color-text-muted)]">
                             <span className={u.role_priority <= 20 ? "text-[var(--color-accent)] font-semibold" : u.role_priority <= 30 ? "text-[var(--color-warning)] font-semibold" : "font-semibold"}>{rolePriorityToBadge(u.role_priority)}</span>
-                            {isGMView && u.hourly_rate ? ` · $${u.hourly_rate}/hr` : null}
-                            {isGMView && !u.hourly_rate && <span className="text-[var(--color-danger)]"> · No rate</span>}
+                            {isGMView && (u.effective_hourly_rate ?? u.hourly_rate) ? ` · $${u.effective_hourly_rate ?? u.hourly_rate}/hr${u.hourly_rate ? "" : " (inherited)"}` : null}
+                            {isGMView && !u.effective_hourly_rate && !u.hourly_rate && <span className="text-[var(--color-danger)]"> · No rate</span>}
                           </div>
                         </div>
                       </div>
@@ -763,9 +763,9 @@ export default function SchedulesCalendarView() {
                                   className="h-full min-h-[44px] flex items-center justify-center opacity-0 hover:opacity-40 transition-opacity cursor-pointer"
                                   role="button"
                                   onClick={() => openAddModal(u.id, day.date)}
-                                  title={!u.hourly_rate ? "Warning: this user has no hourly rate" : undefined}
+                                  title={!u.effective_hourly_rate && !u.hourly_rate ? "Warning: this user has no hourly rate" : undefined}
                                 >
-                                  {!u.hourly_rate ? (
+                                  {!u.effective_hourly_rate && !u.hourly_rate ? (
                                     <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
                                       <path d="M7 4v3m0 2.5h.01M2.5 11.5h9a1 1 0 00.87-1.5L8.37 3a1 1 0 00-1.74 0L2.63 10a1 1 0 00.87 1.5z" stroke="var(--color-warning)" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
                                     </svg>
@@ -828,9 +828,9 @@ export default function SchedulesCalendarView() {
                           return <div className="flex flex-col items-center">
                             <span className="text-[13px] font-bold text-[var(--color-success)]">{ch}h</span>
                             {ph > 0 && <span className="text-[10px] font-semibold text-[var(--color-warning)]">+{ph}h</span>}
-                            {isGMView && u.hourly_rate ? <span className="text-[10px] text-[var(--color-success)]">${ch * u.hourly_rate}</span> : null}
-                            {isGMView && u.hourly_rate && ph > 0 && <span className="text-[10px] text-[var(--color-warning)]">+${ph * u.hourly_rate}</span>}
-                            {isGMView && !u.hourly_rate && <span className="text-[10px] text-[var(--color-danger)]">N/A</span>}
+                            {isGMView && (u.effective_hourly_rate ?? u.hourly_rate) ? <span className="text-[10px] text-[var(--color-success)]">${ch * (u.effective_hourly_rate ?? u.hourly_rate ?? 0)}</span> : null}
+                            {isGMView && (u.effective_hourly_rate ?? u.hourly_rate) && ph > 0 && <span className="text-[10px] text-[var(--color-warning)]">+${ph * (u.effective_hourly_rate ?? u.hourly_rate ?? 0)}</span>}
+                            {isGMView && !u.effective_hourly_rate && !u.hourly_rate && <span className="text-[10px] text-[var(--color-danger)]">N/A</span>}
                           </div>;
                         })()
                       ) : (
