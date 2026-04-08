@@ -109,7 +109,8 @@ export default function SchedulesCalendarView() {
   const [weekStart, setWeekStart] = useState<Date>(() => getWeekStart(new Date()));
   const weekDates = useMemo(() => buildWeekDates(weekStart), [weekStart]);
   const [selectedDay, setSelectedDay] = useState(weekDates[0]?.date ?? "");
-  const [viewAsGM, setViewAsGM] = useState(true);
+  // Viewing-as 토글 제거됨 — 항상 GM 뷰 (cost/actions 표시)
+  const isGMView = true;
   const [weeklySortCol, setWeeklySortCol] = useState(-1);
   const [weeklySortState, setWeeklySortState] = useState<SortState>("none");
   const [dailySortCol, setDailySortCol] = useState(-1);
@@ -477,7 +478,7 @@ export default function SchedulesCalendarView() {
         <ContextMenu
           x={contextMenu.x} y={contextMenu.y}
           status={contextMenu.status}
-          userRole={viewAsGM ? "gm" : "sv"}
+          userRole={isGMView ? "gm" : "sv"}
           onClose={() => setContextMenu(null)}
           onAction={handleContextAction}
         />
@@ -591,7 +592,7 @@ export default function SchedulesCalendarView() {
       <LegendModal open={legendOpen} onClose={() => setLegendOpen(false)} />
 
       <div className="px-4 sm:px-6 xl:px-8 pb-8">
-        {/* Row 1: Store selector + GM toggle */}
+        {/* Row 1: Store selector */}
         <div className="flex items-center gap-3 pt-4 pb-1">
           <select
             value={selectedStore}
@@ -602,13 +603,6 @@ export default function SchedulesCalendarView() {
             {stores.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
           </select>
           <span className="text-[12px] text-[var(--color-text-muted)]">{storeHoursLabel}</span>
-          <button
-            type="button"
-            onClick={() => setViewAsGM(!viewAsGM)}
-            className="ml-auto px-2.5 py-1 rounded bg-[var(--color-surface-hover)] text-[12px] text-[var(--color-text-secondary)] hover:bg-[var(--color-border)] transition-colors"
-          >
-            Viewing as: <strong>{viewAsGM ? "GM" : "SV"}</strong>
-          </button>
         </div>
 
         {/* Row 2: Title + summary numbers + controls */}
@@ -622,7 +616,7 @@ export default function SchedulesCalendarView() {
               <span>Scheduled: <strong className="text-[14px] text-[var(--color-text)]">{totals.tc}</strong></span>
               <span className="w-px h-4 bg-[var(--color-border)]" />
               <span>Pending: <strong className="text-[14px] text-[var(--color-warning)]">{totals.tp}</strong></span>
-              {viewAsGM && <>
+              {isGMView && <>
                 <span className="w-px h-4 bg-[var(--color-border)]" />
                 <span>Labor: <strong className="text-[14px] text-[var(--color-success)]">${Math.round(totals.lc)}</strong>{totals.lp > 0 && <strong className="text-[14px] text-[var(--color-warning)]"> +${Math.round(totals.lp)}</strong>}</span>
               </>}
@@ -713,7 +707,7 @@ export default function SchedulesCalendarView() {
 
               <StatsHeader
                 columns={columns}
-                showLabor={viewAsGM}
+                showLabor={isGMView}
                 sortCol={sortCol}
                 sortState={sortState}
                 onSort={handleSort}
@@ -737,8 +731,8 @@ export default function SchedulesCalendarView() {
                           <div className="text-[13px] font-semibold text-[var(--color-text)] truncate">{u.full_name || u.username}</div>
                           <div className="text-[10px] text-[var(--color-text-muted)]">
                             <span className={u.role_priority <= 20 ? "text-[var(--color-accent)] font-semibold" : u.role_priority <= 30 ? "text-[var(--color-warning)] font-semibold" : "font-semibold"}>{rolePriorityToBadge(u.role_priority)}</span>
-                            {viewAsGM && u.hourly_rate ? ` · $${u.hourly_rate}/hr` : null}
-                            {viewAsGM && !u.hourly_rate && <span className="text-[var(--color-danger)]"> · No rate</span>}
+                            {isGMView && u.hourly_rate ? ` · $${u.hourly_rate}/hr` : null}
+                            {isGMView && !u.hourly_rate && <span className="text-[var(--color-danger)]"> · No rate</span>}
                           </div>
                         </div>
                       </div>
@@ -757,7 +751,7 @@ export default function SchedulesCalendarView() {
                                       key={s.id}
                                       schedule={s}
                                       user={u}
-                                      showCost={viewAsGM}
+                                      showCost={isGMView}
                                       attendance={getAttendanceFor(s.id)}
                                       currentStoreId={selectedStore}
                                       onClick={(e) => handleBlockClick(e, s)}
@@ -799,7 +793,7 @@ export default function SchedulesCalendarView() {
                                   <ScheduleBlock
                                     schedule={sched}
                                     user={u}
-                                    showCost={viewAsGM}
+                                    showCost={isGMView}
                                     attendance={getAttendanceFor(sched.id)}
                                     currentStoreId={selectedStore}
                                     onClick={(e) => handleBlockClick(e, sched)}
@@ -834,9 +828,9 @@ export default function SchedulesCalendarView() {
                           return <div className="flex flex-col items-center">
                             <span className="text-[13px] font-bold text-[var(--color-success)]">{ch}h</span>
                             {ph > 0 && <span className="text-[10px] font-semibold text-[var(--color-warning)]">+{ph}h</span>}
-                            {viewAsGM && u.hourly_rate ? <span className="text-[10px] text-[var(--color-success)]">${ch * u.hourly_rate}</span> : null}
-                            {viewAsGM && u.hourly_rate && ph > 0 && <span className="text-[10px] text-[var(--color-warning)]">+${ph * u.hourly_rate}</span>}
-                            {viewAsGM && !u.hourly_rate && <span className="text-[10px] text-[var(--color-danger)]">N/A</span>}
+                            {isGMView && u.hourly_rate ? <span className="text-[10px] text-[var(--color-success)]">${ch * u.hourly_rate}</span> : null}
+                            {isGMView && u.hourly_rate && ph > 0 && <span className="text-[10px] text-[var(--color-warning)]">+${ph * u.hourly_rate}</span>}
+                            {isGMView && !u.hourly_rate && <span className="text-[10px] text-[var(--color-danger)]">N/A</span>}
                           </div>;
                         })()
                       ) : (
