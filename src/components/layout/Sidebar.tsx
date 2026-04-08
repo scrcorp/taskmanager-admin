@@ -60,6 +60,7 @@ const navItems: NavItem[] = [
     icon: CalendarClock,
     children: [
       { href: "/schedules", label: "Overview", icon: CalendarRange },
+      { href: "/schedules/history", label: "History", icon: History },
       { href: "/schedules/settings", label: "Settings", icon: Settings },
       { href: "/attendances", label: "Attendance", icon: Clock },
     ],
@@ -198,9 +199,13 @@ export function Sidebar({ onNavClick }: { onNavClick?: () => void }) {
     return pathname.startsWith(child.href);
   };
 
+  const isGMPlus = (user?.role_priority ?? 99) <= 20;
+
   const shouldShowChild = (child: NavChild): boolean => {
     // Only show Transactions/Audits when on a store inventory page
     if (child.href.includes("__storeId__")) return !!currentStoreId;
+    // Schedule Settings는 GM+ 전용
+    if (child.href === "/schedules/settings" && !isGMPlus) return false;
     return true;
   };
 
