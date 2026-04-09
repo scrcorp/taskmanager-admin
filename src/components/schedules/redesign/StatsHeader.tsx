@@ -186,18 +186,18 @@ export function StatsHeader({
             </td>
             {columns.map((col, i) => (
               <td key={`hc${col.key}`} className={`text-center py-1 border-r border-[var(--color-border)] border-b border-[var(--color-border)]/30 text-[10px] font-semibold text-[var(--color-success)] ${colBg(i)}`}>
-                {col.hoursConfirmed}h
+                {Math.round(col.hoursConfirmed * 100) / 100}h
               </td>
             ))}
-            <td className="text-center py-1 text-[10px] font-bold text-[var(--color-success)] border-b border-[var(--color-border)]/30 border-l border-[var(--color-border)]">{totalHoursConfirmed}h</td>
+            <td className="text-center py-1 text-[10px] font-bold text-[var(--color-success)] border-b border-[var(--color-border)]/30 border-l border-[var(--color-border)]">{Math.round(totalHoursConfirmed * 100) / 100}h</td>
           </tr>
           <tr className="border-b border-[var(--color-border)]">
             {columns.map((col, i) => (
               <td key={`hp${col.key}`} className={`text-center py-1 border-r border-[var(--color-border)] text-[10px] font-semibold ${col.hoursPending > 0 ? 'text-[var(--color-warning)]' : 'text-[var(--color-text-muted)] opacity-25'} ${colBg(i)}`}>
-                {col.hoursPending}h
+                {Math.round(col.hoursPending * 100) / 100}h
               </td>
             ))}
-            <td className={`text-center py-1 text-[10px] font-bold border-l border-[var(--color-border)] ${totalHoursPending > 0 ? 'text-[var(--color-warning)]' : 'text-[var(--color-text-muted)] opacity-25'}`}>{totalHoursPending}h</td>
+            <td className={`text-center py-1 text-[10px] font-bold border-l border-[var(--color-border)] ${totalHoursPending > 0 ? 'text-[var(--color-warning)]' : 'text-[var(--color-text-muted)] opacity-25'}`}>{Math.round(totalHoursPending * 100) / 100}h</td>
           </tr>
 
           {/* Cost (GM only) */}
@@ -209,18 +209,18 @@ export function StatsHeader({
                 </td>
                 {columns.map((col, i) => (
                   <td key={`lc${col.key}`} className={`text-center py-1 border-r border-[var(--color-border)] border-b border-[var(--color-border)]/30 text-[10px] font-semibold text-[var(--color-success)] ${colBg(i)}`}>
-                    ${col.costConfirmed}
+                    ${col.costConfirmed.toFixed(2)}
                   </td>
                 ))}
-                <td className="text-center py-1 text-[10px] font-bold text-[var(--color-success)] border-b border-[var(--color-border)]/30 border-l border-[var(--color-border)]">${totalCostConfirmed}</td>
+                <td className="text-center py-1 text-[10px] font-bold text-[var(--color-success)] border-b border-[var(--color-border)]/30 border-l border-[var(--color-border)]">${totalCostConfirmed.toFixed(2)}</td>
               </tr>
               <tr className="border-b border-[var(--color-border)]">
                 {columns.map((col, i) => (
                   <td key={`lp${col.key}`} className={`text-center py-1 border-r border-[var(--color-border)] text-[10px] font-semibold ${col.costPending > 0 ? 'text-[var(--color-warning)]' : 'text-[var(--color-text-muted)] opacity-25'} ${colBg(i)}`}>
-                    ${col.costPending}
+                    ${col.costPending.toFixed(2)}
                   </td>
                 ))}
-                <td className={`text-center py-1 text-[10px] font-bold border-l border-[var(--color-border)] ${totalCostPending > 0 ? 'text-[var(--color-warning)]' : 'text-[var(--color-text-muted)] opacity-25'}`}>${totalCostPending}</td>
+                <td className={`text-center py-1 text-[10px] font-bold border-l border-[var(--color-border)] ${totalCostPending > 0 ? 'text-[var(--color-warning)]' : 'text-[var(--color-text-muted)] opacity-25'}`}>${totalCostPending.toFixed(2)}</td>
               </tr>
             </>
           )}

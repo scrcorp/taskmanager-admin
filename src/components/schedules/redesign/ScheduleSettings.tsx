@@ -266,7 +266,7 @@ export function ScheduleSettings({ onBack }: Props) {
           storeId={isStoreScope ? activeTab : undefined}
         />
 
-        <BreakRulesSection
+        <WorkRulesSection
           getValue={getDraftOrEffective}
           queueChange={queueChange}
           isOverridden={isOverridden}
@@ -640,49 +640,41 @@ function ToggleRow({ label, description, value, locked, onChange }: { label: str
 
 // ─── 4. Break Rules ──────────────────────────────────────
 
-function BreakRulesSection(props: SectionCommonProps) {
-  const CONTINUOUS_KEY = "break.max_continuous_minutes";
-  const DURATION_KEY = "break.duration_minutes";
-  const DAILY_KEY = "break.max_daily_work_minutes";
+function WorkRulesSection(props: SectionCommonProps) {
+  const SHIFT_DURATION_KEY = "work.default_schedule_duration_minutes";
+  const BREAK_DURATION_KEY = "break.duration_minutes";
 
-  const maxContinuous = Number(props.getValue(CONTINUOUS_KEY) ?? 240);
-  const duration = Number(props.getValue(DURATION_KEY) ?? 30);
-  const maxDaily = Number(props.getValue(DAILY_KEY) ?? 480);
+  const shiftDuration = Number(props.getValue(SHIFT_DURATION_KEY) ?? 330);
+  const breakDuration = Number(props.getValue(BREAK_DURATION_KEY) ?? 30);
 
-  const locked = props.isLocked(CONTINUOUS_KEY) || props.isLocked(DURATION_KEY) || props.isLocked(DAILY_KEY);
-  const inheritState = useSectionInherit(props, [CONTINUOUS_KEY, DURATION_KEY, DAILY_KEY]);
+  const locked = props.isLocked(SHIFT_DURATION_KEY) || props.isLocked(BREAK_DURATION_KEY);
+  const inheritState = useSectionInherit(props, [SHIFT_DURATION_KEY, BREAK_DURATION_KEY]);
 
-  // 양방향: max_continuous <= max_daily
-  function handleContinuousChange(value: number) {
-    const v = Math.max(1, Math.min(1440, value));
-    props.queueChange(CONTINUOUS_KEY, v);
-    if (maxDaily < v) props.queueChange(DAILY_KEY, v);
+  function handleShiftDurationChange(value: number) {
+    props.queueChange(SHIFT_DURATION_KEY, Math.max(30, Math.min(1440, value)));
   }
-  function handleDurationChange(value: number) {
-    props.queueChange(DURATION_KEY, Math.max(1, Math.min(480, value)));
-  }
-  function handleDailyChange(value: number) {
-    const v = Math.max(1, Math.min(1440, value));
-    props.queueChange(DAILY_KEY, v);
-    if (maxContinuous > v) props.queueChange(CONTINUOUS_KEY, v);
+  function handleBreakDurationChange(value: number) {
+    props.queueChange(BREAK_DURATION_KEY, Math.max(1, Math.min(480, value)));
   }
 
   return (
-    <Card title="Break Rules" subtitle="Continuous work limits and break duration" locked={locked} inheritState={inheritState ?? undefined}>
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+    <Card title="Work Rules" subtitle="Default schedule and break duration" locked={locked} inheritState={inheritState ?? undefined}>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div>
-          <label className="text-[12px] font-medium text-[var(--color-text-secondary)] mb-1.5 block">Max continuous work</label>
+          <label className="text-[12px] font-medium text-[var(--color-text-secondary)] mb-1.5 block">Default schedule duration</label>
           <div className="flex items-center gap-2">
             <input
               type="number"
-              value={maxContinuous}
-              min="1"
+              value={shiftDuration}
+              min="30"
               max="1440"
+              step="30"
               disabled={locked}
-              onChange={(e) => handleContinuousChange(Number(e.target.value))}
+              onChange={(e) => handleShiftDurationChange(Number(e.target.value))}
               className="w-20 px-3 py-1.5 border border-[var(--color-border)] rounded-lg text-[13px] text-center disabled:opacity-50"
             />
             <span className="text-[13px] text-[var(--color-text-muted)]">min</span>
+            {shiftDuration >= 60 && <span className="text-[11px] text-[var(--color-text-muted)]">= {Math.floor(shiftDuration / 60)}h {shiftDuration % 60 > 0 ? `${shiftDuration % 60}m` : ""}</span>}
           </div>
         </div>
         <div>
@@ -690,29 +682,15 @@ function BreakRulesSection(props: SectionCommonProps) {
           <div className="flex items-center gap-2">
             <input
               type="number"
-              value={duration}
+              value={breakDuration}
               min="1"
               max="480"
               disabled={locked}
-              onChange={(e) => handleDurationChange(Number(e.target.value))}
+              onChange={(e) => handleBreakDurationChange(Number(e.target.value))}
               className="w-20 px-3 py-1.5 border border-[var(--color-border)] rounded-lg text-[13px] text-center disabled:opacity-50"
             />
             <span className="text-[13px] text-[var(--color-text-muted)]">min</span>
-          </div>
-        </div>
-        <div>
-          <label className="text-[12px] font-medium text-[var(--color-text-secondary)] mb-1.5 block">Max daily work</label>
-          <div className="flex items-center gap-2">
-            <input
-              type="number"
-              value={maxDaily}
-              min="1"
-              max="1440"
-              disabled={locked}
-              onChange={(e) => handleDailyChange(Number(e.target.value))}
-              className="w-20 px-3 py-1.5 border border-[var(--color-border)] rounded-lg text-[13px] text-center disabled:opacity-50"
-            />
-            <span className="text-[13px] text-[var(--color-text-muted)]">min</span>
+            {breakDuration >= 60 && <span className="text-[11px] text-[var(--color-text-muted)]">= {Math.floor(breakDuration / 60)}h {breakDuration % 60 > 0 ? `${breakDuration % 60}m` : ""}</span>}
           </div>
         </div>
       </div>

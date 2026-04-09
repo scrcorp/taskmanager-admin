@@ -149,11 +149,15 @@ const attendanceMeta: Record<string, { label: string; bg: string; text: string; 
 export function ScheduleDetailPage({ schedule, user, attendance, auditEvents, relatedSchedules, showCost, currentEffectiveRate, onSyncRate, isSyncingRate, onBack, onEdit, onSwap, onConfirm, onRevert, onDelete, onDeleteHistoryEntry }: Props) {
   const startH = parseTimeToHours(schedule.start_time);
   const endH = parseTimeToHours(schedule.end_time);
-  const hours = Math.max(0, endH - startH);
+  const grossHours = Math.max(0, endH - startH);
+  const breakHours = (schedule.break_start_time && schedule.break_end_time)
+    ? Math.max(0, parseTimeToHours(schedule.break_end_time) - parseTimeToHours(schedule.break_start_time))
+    : 0;
+  const hours = Math.max(0, grossHours - breakHours);
   // stored rate만 사용 — NULL이면 No cost (preview/fallback 안 함).
   // 사용자가 명시적으로 sync 버튼 눌러서 cascade rate를 박아넣어야 함.
   const storedRate = schedule.hourly_rate || 0;
-  const cost = storedRate > 0 ? Math.round(hours * storedRate) : null;
+  const cost = storedRate > 0 ? (hours * storedRate).toFixed(2) : null;
   // sync 버튼 노출 조건: stored가 비어있거나 현재 cascade와 다를 때
   const isStoredStale = currentEffectiveRate != null && storedRate !== currentEffectiveRate;
   const status = statusMeta[schedule.status] ?? statusMeta.draft;
