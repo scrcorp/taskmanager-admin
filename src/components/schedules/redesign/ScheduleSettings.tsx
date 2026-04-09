@@ -190,7 +190,7 @@ export function ScheduleSettings({ onBack }: Props) {
         <button
           type="button"
           onClick={onBack}
-          className="w-8 h-8 rounded-lg border border-[var(--color-border)] bg-white flex items-center justify-center text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-hover)]"
+          className="w-8 h-8 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] flex items-center justify-center text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-hover)]"
           aria-label="Back to schedules"
         >
           <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><polyline points="9 11 5 7 9 3" /></svg>
@@ -300,7 +300,7 @@ export function ScheduleSettings({ onBack }: Props) {
 
       {/* Sticky save bar */}
       {isDirty && (
-        <div className="fixed bottom-0 left-0 right-0 xl:left-[220px] z-40 bg-white border-t border-[var(--color-border)] shadow-[0_-4px_16px_rgba(0,0,0,0.06)]">
+        <div className="fixed bottom-0 left-0 right-0 xl:left-[220px] z-40 bg-[var(--color-surface)] border-t border-[var(--color-border)] shadow-[0_-4px_16px_rgba(0,0,0,0.06)]">
           <div className="px-4 sm:px-6 xl:px-8 py-3 flex items-center justify-between gap-3">
             <span className="text-[12px] text-[var(--color-text-secondary)]">
               <strong className="text-[var(--color-warning)]">{Object.keys(draft.values).length + (draft.dayStart ? 1 : 0)}</strong> unsaved change{(Object.keys(draft.values).length + (draft.dayStart ? 1 : 0)) === 1 ? "" : "s"}
@@ -347,7 +347,7 @@ function Card({ title, subtitle, locked, inheritState, children }: CardProps) {
   const showInheritToggle = inheritState !== undefined && !locked;
   const isCustom = inheritState && !inheritState.isInherited;
   return (
-    <div className="bg-white border border-[var(--color-border)] rounded-xl overflow-hidden">
+    <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl overflow-hidden">
       <div className="px-5 py-3 border-b border-[var(--color-border)] bg-[var(--color-bg)]/50 flex items-center gap-3">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">

@@ -737,7 +737,7 @@ export default function SchedulesCalendarView() {
           <select
             value={selectedStore}
             onChange={(e) => setSelectedStore(e.target.value)}
-            className="px-3 py-1.5 bg-white border-2 border-[var(--color-accent)] rounded-lg text-[13px] font-semibold text-[var(--color-accent)] cursor-pointer"
+            className="px-3 py-1.5 bg-[var(--color-surface)] border-2 border-[var(--color-accent)] rounded-lg text-[13px] font-semibold text-[var(--color-accent)] cursor-pointer"
           >
             {stores.length === 0 && <option value="">Loading…</option>}
             {stores.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
@@ -782,7 +782,7 @@ export default function SchedulesCalendarView() {
                     setSelectedDay(fmtLocalDate(d));
                   }
                 }}
-                className="w-8 h-8 rounded-lg border border-[var(--color-border)] bg-white flex items-center justify-center text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-hover)]"
+                className="w-8 h-8 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] flex items-center justify-center text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-hover)]"
                 aria-label="Previous period"
               >
                 <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><polyline points="9 11 5 7 9 3" /></svg>
@@ -802,7 +802,7 @@ export default function SchedulesCalendarView() {
                     setSelectedDay(fmtLocalDate(d));
                   }
                 }}
-                className="w-8 h-8 rounded-lg border border-[var(--color-border)] bg-white flex items-center justify-center text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-hover)]"
+                className="w-8 h-8 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] flex items-center justify-center text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-hover)]"
                 aria-label="Next period"
               >
                 <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><polyline points="5 3 9 7 5 11" /></svg>
@@ -814,7 +814,7 @@ export default function SchedulesCalendarView() {
             <button
               type="button"
               onClick={() => setLegendOpen(true)}
-              className="w-8 h-8 rounded-lg border border-[var(--color-border)] bg-white flex items-center justify-center text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-hover)]"
+              className="w-8 h-8 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] flex items-center justify-center text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-hover)]"
               title="View legend"
             >
               <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
@@ -836,7 +836,7 @@ export default function SchedulesCalendarView() {
         />
 
         {/* Table Grid */}
-        <div className="bg-white border border-[var(--color-border)] rounded-xl overflow-x-auto">
+        <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl overflow-x-auto">
           <div style={{ minWidth: view === "weekly" ? 900 : 1100 }}>
             <table className="w-full border-collapse" style={{ tableLayout: "fixed" }}>
               <colgroup>

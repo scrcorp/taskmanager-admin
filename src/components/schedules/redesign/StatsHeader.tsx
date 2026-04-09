@@ -86,7 +86,7 @@ export function StatsHeader({
           <th
             key={col.key}
             onClick={() => onColumnClick?.(col.key)}
-            className={`px-1 py-2 text-center border-r border-[var(--color-border)] font-normal ${onColumnClick ? 'cursor-pointer hover:bg-white/60' : ''} ${colBg(i)} ${col.isSunday ? 'text-[var(--color-danger)]' : col.isSaturday ? 'text-[var(--color-accent)]' : ''}`}
+            className={`px-1 py-2 text-center border-r border-[var(--color-border)] font-normal ${onColumnClick ? 'cursor-pointer hover:bg-[var(--color-surface-hover)]' : ''} ${colBg(i)} ${col.isSunday ? 'text-[var(--color-danger)]' : col.isSaturday ? 'text-[var(--color-accent)]' : ''}`}
           >
             <div className="text-[13px] font-bold leading-tight">{col.label}</div>
             {col.sublabel && <div className="text-[11px] text-[var(--color-text-secondary)] mt-0.5 font-normal">{col.sublabel}</div>}

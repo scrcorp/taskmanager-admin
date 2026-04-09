@@ -124,7 +124,7 @@ export function ScheduleEditModal({ open, mode, schedule, prefilledUserId, prefi
   return (
     <div className="fixed inset-0 z-[300] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/40" onClick={onClose} />
-      <div className="relative bg-white rounded-2xl shadow-[0_16px_48px_rgba(0,0,0,0.2)] w-full max-w-md max-h-[90vh] overflow-y-auto">
+      <div className="relative bg-[var(--color-surface)] rounded-2xl shadow-[0_16px_48px_rgba(0,0,0,0.2)] w-full max-w-md max-h-[90vh] overflow-y-auto">
         {/* Header */}
         <div className="px-5 py-4 border-b border-[var(--color-border)] flex items-center justify-between">
           <h2 className="text-[15px] font-bold text-[var(--color-text)]">
@@ -156,7 +156,7 @@ export function ScheduleEditModal({ open, mode, schedule, prefilledUserId, prefi
               <select
                 value={userId}
                 onChange={(e) => setUserId(e.target.value)}
-                className="flex-1 px-3 py-2 border border-[var(--color-border)] rounded-lg text-[13px] bg-white"
+                className="flex-1 px-3 py-2 border border-[var(--color-border)] rounded-lg text-[13px] bg-[var(--color-surface)]"
               >
                 {users.map((u) => (
                   <option key={u.id} value={u.id}>{u.full_name || u.username}</option>
@@ -172,7 +172,7 @@ export function ScheduleEditModal({ open, mode, schedule, prefilledUserId, prefi
               type="date"
               value={date}
               onChange={(e) => setDate(e.target.value)}
-              className="w-full px-3 py-2 border border-[var(--color-border)] rounded-lg text-[13px] bg-white"
+              className="w-full px-3 py-2 border border-[var(--color-border)] rounded-lg text-[13px] bg-[var(--color-surface)]"
             />
           </div>
 
@@ -184,7 +184,7 @@ export function ScheduleEditModal({ open, mode, schedule, prefilledUserId, prefi
                 type="time"
                 value={startTime}
                 onChange={(e) => setStartTime(e.target.value)}
-                className="w-full px-3 py-2 border border-[var(--color-border)] rounded-lg text-[13px] bg-white"
+                className="w-full px-3 py-2 border border-[var(--color-border)] rounded-lg text-[13px] bg-[var(--color-surface)]"
               />
             </div>
             <div>
@@ -193,7 +193,7 @@ export function ScheduleEditModal({ open, mode, schedule, prefilledUserId, prefi
                 type="time"
                 value={endTime}
                 onChange={(e) => setEndTime(e.target.value)}
-                className="w-full px-3 py-2 border border-[var(--color-border)] rounded-lg text-[13px] bg-white"
+                className="w-full px-3 py-2 border border-[var(--color-border)] rounded-lg text-[13px] bg-[var(--color-surface)]"
               />
             </div>
           </div>
@@ -204,7 +204,7 @@ export function ScheduleEditModal({ open, mode, schedule, prefilledUserId, prefi
             <select
               value={workRoleId}
               onChange={(e) => setWorkRoleId(e.target.value)}
-              className="w-full px-3 py-2 border border-[var(--color-border)] rounded-lg text-[13px] bg-white"
+              className="w-full px-3 py-2 border border-[var(--color-border)] rounded-lg text-[13px] bg-[var(--color-surface)]"
             >
               <option value="">— None (no role) —</option>
               {workRolesQ.isLoading && <option disabled>Loading…</option>}
@@ -226,7 +226,7 @@ export function ScheduleEditModal({ open, mode, schedule, prefilledUserId, prefi
               Hourly Rate <span className="text-[var(--color-text-muted)] normal-case font-normal">(stored on this schedule)</span>
             </label>
             <div className="flex items-center gap-2">
-              <div className="flex items-center flex-1 px-3 py-2 border border-[var(--color-border)] rounded-lg bg-white focus-within:border-[var(--color-accent)]">
+              <div className="flex items-center flex-1 px-3 py-2 border border-[var(--color-border)] rounded-lg bg-[var(--color-surface)] focus-within:border-[var(--color-accent)]">
                 <span className="text-[13px] text-[var(--color-text-muted)] mr-1">$</span>
                 <input
                   type="number"

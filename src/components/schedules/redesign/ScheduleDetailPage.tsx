@@ -108,6 +108,7 @@ const statusMeta: Record<string, { label: string; bg: string; text: string; dot:
   confirmed: { label: "Confirmed", bg: "bg-[var(--color-success-muted)]", text: "text-[var(--color-success)]", dot: "bg-[var(--color-success)]" },
   rejected: { label: "Rejected", bg: "bg-[var(--color-danger-muted)]", text: "text-[var(--color-danger)]", dot: "bg-[var(--color-danger)]" },
   cancelled: { label: "Cancelled", bg: "bg-[var(--color-bg)]", text: "text-[var(--color-text-muted)]", dot: "bg-[var(--color-text-muted)]" },
+  deleted: { label: "Deleted", bg: "bg-[var(--color-danger-muted)]", text: "text-[var(--color-danger)]", dot: "bg-[var(--color-danger)]" },
 };
 
 const eventColors: Record<string, string> = {
@@ -180,6 +181,7 @@ export function ScheduleDetailPage({ schedule, user, attendance, auditEvents, re
 
   const isConfirmed = schedule.status === "confirmed";
   const isRequested = schedule.status === "requested";
+  const isDeleted = schedule.status === "deleted";
 
   return (
     <div>
@@ -188,7 +190,7 @@ export function ScheduleDetailPage({ schedule, user, attendance, auditEvents, re
         <button
           type="button"
           onClick={onBack}
-          className="w-8 h-8 rounded-lg border border-[var(--color-border)] bg-white flex items-center justify-center text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-hover)]"
+          className="w-8 h-8 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] flex items-center justify-center text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-hover)]"
           aria-label="Back to schedule"
         >
           <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><polyline points="9 11 5 7 9 3" /></svg>
@@ -204,7 +206,7 @@ export function ScheduleDetailPage({ schedule, user, attendance, auditEvents, re
         {/* Left column (2/3) */}
         <div className="lg:col-span-2 space-y-4">
           {/* Staff card */}
-          <div className="bg-white border border-[var(--color-border)] rounded-xl p-5">
+          <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl p-5">
             <div className="text-[10px] font-semibold uppercase tracking-wider text-[var(--color-text-muted)] mb-3">Staff</div>
             <div className="flex items-center gap-3">
               <div className={`w-14 h-14 rounded-full flex items-center justify-center text-[16px] font-bold shrink-0 ${rolePriorityToColorClass(user.role_priority)}`}>
@@ -228,7 +230,7 @@ export function ScheduleDetailPage({ schedule, user, attendance, auditEvents, re
           </div>
 
           {/* Schedule card */}
-          <div className="bg-white border border-[var(--color-border)] rounded-xl p-5">
+          <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl p-5">
             <div className="flex items-center justify-between mb-3">
               <div className="text-[10px] font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">Schedule</div>
               <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold ${status.bg} ${status.text}`}>
@@ -280,7 +282,7 @@ export function ScheduleDetailPage({ schedule, user, attendance, auditEvents, re
 
           {/* Cost breakdown (GM only) */}
           {showCost && (
-            <div className="bg-white border border-[var(--color-border)] rounded-xl p-5">
+            <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl p-5">
               <div className="flex items-center justify-between mb-3">
                 <div className="text-[10px] font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">Cost Breakdown</div>
               </div>
@@ -328,7 +330,7 @@ export function ScheduleDetailPage({ schedule, user, attendance, auditEvents, re
 
           {/* Attendance comparison */}
           {attendance && (
-            <div className="bg-white border border-[var(--color-border)] rounded-xl p-5">
+            <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl p-5">
               <div className="flex items-center justify-between mb-3">
                 <div className="text-[10px] font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">Attendance</div>
                 <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold ${attendanceMeta[attendance.status]?.bg ?? ""} ${attendanceMeta[attendance.status]?.text ?? ""}`}>
@@ -398,14 +400,14 @@ export function ScheduleDetailPage({ schedule, user, attendance, auditEvents, re
 
           {/* Notes (read-only — schedule.note) */}
           {schedule.note && (
-            <div className="bg-white border border-[var(--color-border)] rounded-xl p-5">
+            <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl p-5">
               <div className="text-[10px] font-semibold uppercase tracking-wider text-[var(--color-text-muted)] mb-2">Notes</div>
               <p className="text-[13px] text-[var(--color-text-secondary)] whitespace-pre-wrap">{schedule.note}</p>
             </div>
           )}
 
           {/* History */}
-          <div className="bg-white border border-[var(--color-border)] rounded-xl p-5">
+          <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl p-5">
             <div className="flex items-center justify-between mb-3">
               <div className="text-[10px] font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">History</div>
               <a
@@ -478,9 +480,9 @@ export function ScheduleDetailPage({ schedule, user, attendance, auditEvents, re
 
         {/* Right column (1/3) */}
         <div className="space-y-4">
-          {/* Quick actions */}
-          {(onEdit || onConfirm || onSwap || onRevert || onDelete) && (
-          <div className="bg-white border border-[var(--color-border)] rounded-xl p-5">
+          {/* Quick actions — deleted schedule은 read-only */}
+          {!isDeleted && (onEdit || onConfirm || onSwap || onRevert || onDelete) && (
+          <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl p-5">
             <div className="text-[10px] font-semibold uppercase tracking-wider text-[var(--color-text-muted)] mb-3">Quick Actions</div>
             <div className="space-y-2">
               {onEdit && (
@@ -533,7 +535,7 @@ export function ScheduleDetailPage({ schedule, user, attendance, auditEvents, re
           )}
 
           {/* Related schedules */}
-          <div className="bg-white border border-[var(--color-border)] rounded-xl p-5">
+          <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl p-5">
             <div className="text-[10px] font-semibold uppercase tracking-wider text-[var(--color-text-muted)] mb-3">
               Related Schedules This Week
             </div>
