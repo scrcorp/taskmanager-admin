@@ -76,10 +76,10 @@ export function StatsHeader({
   }
 
   return (
-    <thead>
+    <thead className="sticky top-0 z-20">
       {/* Row 1: Day/Time headers */}
       <tr className="border-b border-[var(--color-border)] bg-[var(--color-bg)]">
-        <th className="px-3 py-2.5 border-r-2 border-[var(--color-border)] text-center">
+        <th className="px-3 py-2.5 border-r-2 border-[var(--color-border)] text-center sticky left-0 z-[22] bg-[var(--color-bg)]">
           <span className="text-[11px] font-bold uppercase tracking-wider text-[var(--color-text-muted)]">{firstColLabel}</span>
         </th>
         {columns.map((col, i) => (
@@ -98,8 +98,8 @@ export function StatsHeader({
       </tr>
 
       {/* Row 2: Confirmed counts with sort */}
-      <tr className="border-b border-[var(--color-border)]/30">
-        <td className="border-r-2 border-[var(--color-border)] text-center" rowSpan={2}>
+      <tr className="border-b border-[var(--color-border)]/30 bg-[var(--color-surface)]">
+        <td className="border-r-2 border-[var(--color-border)] text-center sticky left-0 z-[22] bg-[var(--color-surface)]" rowSpan={2}>
           <button
             onClick={() => setExpanded(!expanded)}
             className="text-[11px] font-bold uppercase tracking-wider text-[var(--color-text-muted)] hover:text-[var(--color-accent)] transition-colors flex items-center gap-1 mx-auto"
@@ -145,7 +145,7 @@ export function StatsHeader({
       </tr>
 
       {/* Row 3: Pending counts with sort */}
-      <tr className="border-b border-[var(--color-border)]">
+      <tr className="border-b border-[var(--color-border)] bg-[var(--color-surface)]">
         {/* rowSpan cell from above covers this row's first column */}
         {columns.map((col, i) => (
           <td
@@ -180,8 +180,8 @@ export function StatsHeader({
       {/* Expandable: Hours */}
       {expanded && (
         <>
-          <tr className="border-b border-[var(--color-border)]/30">
-            <td className="border-r-2 border-[var(--color-border)] text-center" rowSpan={2}>
+          <tr className="border-b border-[var(--color-border)]/30 bg-[var(--color-surface)]">
+            <td className="border-r-2 border-[var(--color-border)] text-center sticky left-0 z-[22] bg-[var(--color-surface)]" rowSpan={2}>
               <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-muted)]">Hours</span>
             </td>
             {columns.map((col, i) => (
@@ -191,7 +191,7 @@ export function StatsHeader({
             ))}
             <td className="text-center py-1 text-[10px] font-bold text-[var(--color-success)] border-b border-[var(--color-border)]/30 border-l border-[var(--color-border)]">{Math.round(totalHoursConfirmed * 100) / 100}h</td>
           </tr>
-          <tr className="border-b border-[var(--color-border)]">
+          <tr className="border-b border-[var(--color-border)] bg-[var(--color-surface)]">
             {columns.map((col, i) => (
               <td key={`hp${col.key}`} className={`text-center py-1 border-r border-[var(--color-border)] text-[10px] font-semibold ${col.hoursPending > 0 ? 'text-[var(--color-warning)]' : 'text-[var(--color-text-muted)] opacity-25'} ${colBg(i)}`}>
                 {Math.round(col.hoursPending * 100) / 100}h
@@ -203,8 +203,8 @@ export function StatsHeader({
           {/* Cost (GM only) */}
           {showCost && (
             <>
-              <tr className="border-b border-[var(--color-border)]/30">
-                <td className="border-r-2 border-[var(--color-border)] text-center" rowSpan={2}>
+              <tr className="border-b border-[var(--color-border)]/30 bg-[var(--color-surface)]">
+                <td className="border-r-2 border-[var(--color-border)] text-center sticky left-0 z-[22] bg-[var(--color-surface)]" rowSpan={2}>
                   <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-muted)]">Cost</span>
                 </td>
                 {columns.map((col, i) => (
@@ -214,7 +214,7 @@ export function StatsHeader({
                 ))}
                 <td className="text-center py-1 text-[10px] font-bold text-[var(--color-success)] border-b border-[var(--color-border)]/30 border-l border-[var(--color-border)]">${totalCostConfirmed.toFixed(2)}</td>
               </tr>
-              <tr className="border-b border-[var(--color-border)]">
+              <tr className="border-b border-[var(--color-border)] bg-[var(--color-surface)]">
                 {columns.map((col, i) => (
                   <td key={`lp${col.key}`} className={`text-center py-1 border-r border-[var(--color-border)] text-[10px] font-semibold ${col.costPending > 0 ? 'text-[var(--color-warning)]' : 'text-[var(--color-text-muted)] opacity-25'} ${colBg(i)}`}>
                     ${col.costPending.toFixed(2)}

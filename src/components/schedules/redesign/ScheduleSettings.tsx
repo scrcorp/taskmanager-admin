@@ -15,26 +15,24 @@
  * 3. Approval Workflow (registry, both)
  * 4. Break Rules (registry, both)
  * 5. Attendance (registry, both)
- * 6. Business Day Start (store only — store.day_start_time)
+ * 6. Operating Hours / Schedule Range (registry key: schedule.range, both)
  * 7. Work Roles (store only — WorkRolesPanel reuse)
  */
 
-import { useState, useMemo } from "react";
-import { useStores, useUpdateStore } from "@/hooks/useStores";
+import { useState, useMemo, useRef, useEffect } from "react";
+import { useStores } from "@/hooks/useStores";
 import {
   useSettingsRegistry,
   useOrgSettings,
   useStoreSettings,
   useUpsertOrgSetting,
   useUpsertStoreSetting,
-  useDeleteOrgSetting,
   useDeleteStoreSetting,
   type SettingsRegistryEntry,
   type OrgSettingEntry,
   type StoreSettingEntry,
 } from "@/hooks/useSettings";
 import { WorkRolesPanel } from "@/components/schedules/WorkRolesPanel";
-import type { Store } from "@/types";
 
 interface Props {
   showCost?: boolean;
@@ -46,11 +44,11 @@ interface Props {
 interface DraftState {
   /** 현재 scope 기준 변경된 키-값 */
   values: Record<string, unknown>;
-  /** day_start_time draft (store scope only) */
-  dayStart: Record<string, string> | null;
+  /** store-level: keys to delete (revert to org/default) */
+  deletedKeys: string[];
 }
 
-const EMPTY_DRAFT: DraftState = { values: {}, dayStart: null };
+const EMPTY_DRAFT: DraftState = { values: {}, deletedKeys: [] };
 
 // ─── Main component ────────────────────────────────────
 
@@ -62,7 +60,7 @@ export function ScheduleSettings({ onBack }: Props) {
 
   // 탭 변경 시 draft 폐기 (혼동 방지)
   function handleTabChange(tab: "org" | string) {
-    if (Object.keys(draft.values).length > 0 || draft.dayStart) {
+    if (Object.keys(draft.values).length > 0 || draft.deletedKeys.length > 0) {
       if (!window.confirm("You have unsaved changes. Discard them and switch?")) return;
     }
     setDraft(EMPTY_DRAFT);
@@ -102,19 +100,31 @@ export function ScheduleSettings({ onBack }: Props) {
     return getEffectiveValue(key);
   }
 
-  /** 값 동등 비교 (primitive + JSON-serializable object) */
+  /** 값 동등 비교 — key 순서 무관한 깊은 비교 */
   function valueEqual(a: unknown, b: unknown): boolean {
     if (a === b) return true;
-    if (a == null || b == null) return false;
+    if (a == null || b == null) return a == b;
     if (typeof a !== typeof b) return false;
-    return JSON.stringify(a) === JSON.stringify(b);
+    if (typeof a !== "object") return a === b;
+    // 정렬된 JSON 비교 (키 순서 무관)
+    return JSON.stringify(sortKeys(a)) === JSON.stringify(sortKeys(b));
+  }
+  function sortKeys(obj: unknown): unknown {
+    if (obj === null || typeof obj !== "object") return obj;
+    if (Array.isArray(obj)) return obj.map(sortKeys);
+    return Object.keys(obj as Record<string, unknown>).sort().reduce((acc, k) => {
+      (acc as Record<string, unknown>)[k] = sortKeys((obj as Record<string, unknown>)[k]);
+      return acc;
+    }, {} as Record<string, unknown>);
   }
 
   function queueChange(key: string, value: unknown) {
     setDraft((prev) => {
       const effective = getEffectiveValue(key);
+      // schedule.range는 normalizeRange로 정규화 후 비교 (레거시 ↔ 새 포맷)
+      const norm = (v: unknown) => key === "schedule.range" ? normalizeRange(v) : v;
       // 새 값이 effective와 같으면 draft에서 제거 (= 변경 없음으로 처리)
-      if (valueEqual(value, effective)) {
+      if (valueEqual(norm(value), norm(effective))) {
         if (!(key in prev.values)) return prev; // 이미 없음
         const next = { ...prev.values };
         delete next[key];
@@ -126,20 +136,37 @@ export function ScheduleSettings({ onBack }: Props) {
     });
   }
 
-  function queueDayStart(value: Record<string, string>) {
+  /** Force-queue a value even if it matches effective (for creating store overrides) */
+  function forceQueueChange(key: string, value: unknown) {
     setDraft((prev) => {
-      const serverValue = activeStore?.day_start_time as Record<string, string> | null;
-      if (serverValue && valueEqual(value, serverValue)) {
-        if (prev.dayStart === null) return prev;
-        return { ...prev, dayStart: null };
-      }
-      if (valueEqual(prev.dayStart, value)) return prev;
-      return { ...prev, dayStart: value };
+      if (valueEqual(prev.values[key], value)) return prev;
+      return { ...prev, values: { ...prev.values, [key]: value } };
     });
   }
 
-  function getDayStartDraft(): Record<string, string> | null {
-    return draft.dayStart;
+  /** Queue a store-level key for deletion (revert to inherit) */
+  function queueDeleteKey(key: string) {
+    setDraft((prev) => {
+      // Remove from values if queued there
+      const nextValues = { ...prev.values };
+      delete nextValues[key];
+      // Only queue delete if store actually has an override on server
+      const hasOverride = isOverridden(key);
+      if (!hasOverride) {
+        // No server override → just clean up draft, no delete needed
+        return { ...prev, values: nextValues };
+      }
+      const nextDeleted = prev.deletedKeys.includes(key) ? prev.deletedKeys : [...prev.deletedKeys, key];
+      return { ...prev, values: nextValues, deletedKeys: nextDeleted };
+    });
+  }
+
+  /** Cancel a pending deletion (when switching back to custom) */
+  function unqueueDeleteKey(key: string) {
+    setDraft((prev) => {
+      if (!prev.deletedKeys.includes(key)) return prev;
+      return { ...prev, deletedKeys: prev.deletedKeys.filter((k) => k !== key) };
+    });
   }
 
   function isOverridden(key: string): boolean {
@@ -154,12 +181,34 @@ export function ScheduleSettings({ onBack }: Props) {
   // ─── Save / Cancel ────────────────────────────────────
   const upsertOrg = useUpsertOrgSetting();
   const upsertStore = useUpsertStoreSetting(isStoreScope ? activeTab : "");
-  const updateStore = useUpdateStore();
+  const deleteStoreSetting = useDeleteStoreSetting(isStoreScope ? activeTab : "");
 
-  const isDirty = Object.keys(draft.values).length > 0 || draft.dayStart !== null;
-  const isSaving = upsertOrg.isPending || upsertStore.isPending || updateStore.isPending;
+  const isDirty = Object.keys(draft.values).length > 0 || draft.deletedKeys.length > 0;
+
+  /** 해당 key가 draft에서 변경되었는지 */
+  function isChanged(key: string): boolean {
+    return key in draft.values || draft.deletedKeys.includes(key);
+  }
+  const isSaving = upsertOrg.isPending || upsertStore.isPending || deleteStoreSetting.isPending;
+
+  function toMinutes(hhmm: string): number {
+    const [h, m] = hhmm.split(":").map(Number);
+    return (h || 0) * 60 + (m || 0);
+  }
 
   async function handleSave() {
+    // schedule.range start >= end validation
+    const rangeValue = draft.values["schedule.range"] as Record<string, { start: string; end: string }> | undefined;
+    if (rangeValue) {
+      for (const [key, entry] of Object.entries(rangeValue)) {
+        if (entry && typeof entry === "object" && "start" in entry && "end" in entry) {
+          if (toMinutes(entry.start) >= toMinutes(entry.end)) {
+            window.alert(`Schedule Range: Start must be before End (${key === "all" ? "all days" : key}).`);
+            return;
+          }
+        }
+      }
+    }
     try {
       // values flush
       for (const [key, value] of Object.entries(draft.values)) {
@@ -169,10 +218,14 @@ export function ScheduleSettings({ onBack }: Props) {
           await upsertOrg.mutateAsync({ key, value });
         }
       }
-      // day_start_time flush
-      if (draft.dayStart && isStoreScope && activeTab) {
-        await updateStore.mutateAsync({ id: activeTab, day_start_time: draft.dayStart });
+
+      // delete store-level settings (revert to inherit)
+      if (isStoreScope) {
+        for (const key of draft.deletedKeys) {
+          await deleteStoreSetting.mutateAsync(key);
+        }
       }
+
       setDraft(EMPTY_DRAFT);
     } catch (e) {
       window.alert("Save failed: " + (e instanceof Error ? e.message : String(e)));
@@ -212,25 +265,28 @@ export function ScheduleSettings({ onBack }: Props) {
         </div>
       </div>
 
-      {/* Level tabs */}
-      <div className="flex gap-1 bg-[var(--color-bg)] border border-[var(--color-border)] rounded-lg p-0.5 w-fit mb-5 overflow-x-auto">
-        <button
-          type="button"
-          onClick={() => handleTabChange("org")}
-          className={`px-3.5 py-1.5 rounded-md text-[13px] font-medium transition-all whitespace-nowrap ${activeTab === "org" ? "bg-[var(--color-accent)] text-white" : "text-[var(--color-text-secondary)] hover:text-[var(--color-text)]"}`}
-        >
-          Organization
-        </button>
-        {stores.map((s) => (
+      {/* Level tabs — scrollable with truncated names */}
+      <div className="relative mb-5 max-w-full">
+        <div className="flex gap-1 bg-[var(--color-bg)] border border-[var(--color-border)] rounded-lg p-0.5 overflow-x-auto scrollbar-thin scrollbar-thumb-[var(--color-border)] scrollbar-track-transparent">
           <button
-            key={s.id}
             type="button"
-            onClick={() => handleTabChange(s.id)}
-            className={`px-3.5 py-1.5 rounded-md text-[13px] font-medium transition-all whitespace-nowrap ${activeTab === s.id ? "bg-[var(--color-accent)] text-white" : "text-[var(--color-text-secondary)] hover:text-[var(--color-text)]"}`}
+            onClick={() => handleTabChange("org")}
+            className={`px-3.5 py-1.5 rounded-md text-[13px] font-medium transition-all whitespace-nowrap shrink-0 ${activeTab === "org" ? "bg-[var(--color-accent)] text-white" : "text-[var(--color-text-secondary)] hover:text-[var(--color-text)]"}`}
           >
-            {s.name}
+            Organization
           </button>
-        ))}
+          {stores.map((s) => (
+            <button
+              key={s.id}
+              type="button"
+              onClick={() => handleTabChange(s.id)}
+              title={s.name}
+              className={`px-3.5 py-1.5 rounded-md text-[13px] font-medium transition-all whitespace-nowrap shrink-0 max-w-[160px] truncate ${activeTab === s.id ? "bg-[var(--color-accent)] text-white" : "text-[var(--color-text-secondary)] hover:text-[var(--color-text)]"}`}
+            >
+              {s.name}
+            </button>
+          ))}
+        </div>
       </div>
 
       {registryQ.isLoading && (
@@ -242,8 +298,12 @@ export function ScheduleSettings({ onBack }: Props) {
         <WorkHourAlertsSection
           getValue={getDraftOrEffective}
           queueChange={queueChange}
+          forceQueueChange={forceQueueChange}
+          queueDeleteKey={queueDeleteKey}
+          unqueueDeleteKey={unqueueDeleteKey}
           isOverridden={isOverridden}
           isLocked={isLockedAtOrg}
+          isChanged={isChanged}
           scope={isStoreScope ? "store" : "org"}
           storeId={isStoreScope ? activeTab : undefined}
         />
@@ -251,8 +311,12 @@ export function ScheduleSettings({ onBack }: Props) {
         <WeeklyLimitsSection
           getValue={getDraftOrEffective}
           queueChange={queueChange}
+          forceQueueChange={forceQueueChange}
+          queueDeleteKey={queueDeleteKey}
+          unqueueDeleteKey={unqueueDeleteKey}
           isOverridden={isOverridden}
           isLocked={isLockedAtOrg}
+          isChanged={isChanged}
           scope={isStoreScope ? "store" : "org"}
           storeId={isStoreScope ? activeTab : undefined}
         />
@@ -260,8 +324,12 @@ export function ScheduleSettings({ onBack }: Props) {
         <ApprovalSection
           getValue={getDraftOrEffective}
           queueChange={queueChange}
+          forceQueueChange={forceQueueChange}
+          queueDeleteKey={queueDeleteKey}
+          unqueueDeleteKey={unqueueDeleteKey}
           isOverridden={isOverridden}
           isLocked={isLockedAtOrg}
+          isChanged={isChanged}
           scope={isStoreScope ? "store" : "org"}
           storeId={isStoreScope ? activeTab : undefined}
         />
@@ -269,8 +337,12 @@ export function ScheduleSettings({ onBack }: Props) {
         <WorkRulesSection
           getValue={getDraftOrEffective}
           queueChange={queueChange}
+          forceQueueChange={forceQueueChange}
+          queueDeleteKey={queueDeleteKey}
+          unqueueDeleteKey={unqueueDeleteKey}
           isOverridden={isOverridden}
           isLocked={isLockedAtOrg}
+          isChanged={isChanged}
           scope={isStoreScope ? "store" : "org"}
           storeId={isStoreScope ? activeTab : undefined}
         />
@@ -278,23 +350,36 @@ export function ScheduleSettings({ onBack }: Props) {
         <AttendanceSettingsSection
           getValue={getDraftOrEffective}
           queueChange={queueChange}
+          forceQueueChange={forceQueueChange}
+          queueDeleteKey={queueDeleteKey}
+          unqueueDeleteKey={unqueueDeleteKey}
           isOverridden={isOverridden}
           isLocked={isLockedAtOrg}
+          isChanged={isChanged}
           scope={isStoreScope ? "store" : "org"}
           storeId={isStoreScope ? activeTab : undefined}
         />
 
+        <ScheduleRangeSection
+          getValue={getDraftOrEffective}
+          queueChange={queueChange}
+          isOverridden={isOverridden}
+          isLocked={isLockedAtOrg}
+          isChanged={isChanged}
+          scope={isStoreScope ? "store" : "org"}
+          storeId={isStoreScope ? activeTab : undefined}
+          forceQueueChange={forceQueueChange}
+          queueDeleteKey={queueDeleteKey}
+          unqueueDeleteKey={unqueueDeleteKey}
+          deletedKeys={draft.deletedKeys}
+          draftKeys={Object.keys(draft.values)}
+        />
+
+        {/* Work Roles — store level */}
         {isStoreScope && activeStore && (
-          <>
-            <BusinessDayStartSection
-              store={activeStore}
-              draft={getDayStartDraft()}
-              onChange={queueDayStart}
-            />
-            <Card title="Work Roles" subtitle="Shift × Position combinations with required headcount per day">
-              <WorkRolesPanel storeId={activeTab} />
-            </Card>
-          </>
+          <Card title="Work Roles" subtitle="Shift × Position combinations with required headcount per day">
+            <WorkRolesPanel storeId={activeTab} />
+          </Card>
         )}
       </div>
 
@@ -303,7 +388,7 @@ export function ScheduleSettings({ onBack }: Props) {
         <div className="fixed bottom-0 left-0 right-0 xl:left-[220px] z-40 bg-[var(--color-surface)] border-t border-[var(--color-border)] shadow-[0_-4px_16px_rgba(0,0,0,0.06)]">
           <div className="px-4 sm:px-6 xl:px-8 py-3 flex items-center justify-between gap-3">
             <span className="text-[12px] text-[var(--color-text-secondary)]">
-              <strong className="text-[var(--color-warning)]">{Object.keys(draft.values).length + (draft.dayStart ? 1 : 0)}</strong> unsaved change{(Object.keys(draft.values).length + (draft.dayStart ? 1 : 0)) === 1 ? "" : "s"}
+              <strong className="text-[var(--color-warning)]">{Object.keys(draft.values).length + draft.deletedKeys.length}</strong> unsaved change{(Object.keys(draft.values).length + draft.deletedKeys.length) === 1 ? "" : "s"}
             </span>
             <div className="flex items-center gap-2">
               <button
@@ -386,35 +471,69 @@ function Card({ title, subtitle, locked, inheritState, children }: CardProps) {
 interface SectionCommonProps {
   getValue: (key: string) => unknown;
   queueChange: (key: string, value: unknown) => void;
+  forceQueueChange: (key: string, value: unknown) => void;
+  queueDeleteKey: (key: string) => void;
+  unqueueDeleteKey: (key: string) => void;
   isOverridden: (key: string) => boolean;
   isLocked: (key: string) => boolean;
+  isChanged: (key: string) => boolean;
   scope: "org" | "store";
   storeId?: string;
 }
 
+/** 변경된 input 필드: 왼쪽 accent bar 표시 */
+function ChangedMark({ changed, children }: { changed: boolean; children: React.ReactNode }) {
+  if (!changed) return <>{children}</>;
+  return (
+    <div className="relative">
+      <div className="absolute -left-2 top-1 bottom-1 w-[3px] rounded-full bg-[var(--color-accent)]" />
+      {children}
+    </div>
+  );
+}
+
+/** localStorage key for preserving custom values when switching to Inherit */
+function customCacheKey(storeId: string, settingKey: string): string {
+  return `schedSettings:${storeId}:${settingKey}`;
+}
+
 /**
- * Section의 inherit toggle. 기존 store overrides를 모두 삭제 / effective values를 모두 upsert.
- * 이 토글은 draft와 별개로 즉시 server에 적용 (구조 변경이라).
+ * Section의 inherit toggle — draft 기반.
+ * Inherit 전환 시 custom 값을 localStorage에 보존.
+ * Custom 복귀 시 localStorage에서 복원.
  */
 function useSectionInherit(props: SectionCommonProps, keys: string[]) {
-  const upsertStore = useUpsertStoreSetting(props.storeId ?? "");
-  const deleteStore = useDeleteStoreSetting(props.storeId ?? "");
-
   if (props.scope !== "store" || !props.storeId) return null;
+  const storeId = props.storeId;
 
-  const isInherited = !keys.some((k) => props.isOverridden(k));
+  const hasServerOverride = keys.some((k) => props.isOverridden(k));
+  // draft에 custom 값이 추가됨 (force-queued, 아직 서버에 없음)
+  const hasDraftCustom = keys.some((k) => props.isChanged(k) && !props.isOverridden(k));
+  // 서버에 override 있는데 delete 예정
+  const allServerDeletePending = hasServerOverride && keys.every((k) => props.isChanged(k));
+
+  const isInherited = allServerDeletePending || (!hasServerOverride && !hasDraftCustom);
 
   const toggleInherit = () => {
     if (isInherited) {
+      // → Custom: localStorage에서 복원, 없으면 현재 effective 사용
       keys.forEach((key) => {
-        const value = props.getValue(key);
+        // delete 예약 취소
+        props.unqueueDeleteKey(key);
+        const cached = localStorage.getItem(customCacheKey(storeId, key));
+        const value = cached ? JSON.parse(cached) : props.getValue(key);
         if (value !== undefined && value !== null) {
-          upsertStore.mutate({ key, value });
+          props.forceQueueChange(key, value);
         }
       });
     } else {
+      // → Inherit: custom 값을 localStorage에 보존 후 delete 예약
       keys.forEach((key) => {
-        if (props.isOverridden(key)) deleteStore.mutate(key);
+        const currentVal = props.getValue(key);
+        if (currentVal !== undefined && currentVal !== null) {
+          localStorage.setItem(customCacheKey(storeId, key), JSON.stringify(currentVal));
+        }
+        props.queueDeleteKey(key);
       });
     }
   };
@@ -454,46 +573,50 @@ function WorkHourAlertsSection(props: SectionCommonProps) {
     <Card title="Work Hour Alerts" subtitle="Color thresholds for daily work hours" locked={locked} inheritState={inheritState ?? undefined}>
       <div className="space-y-4">
         <div className="grid grid-cols-3 gap-4">
-          <div>
-            <label className="text-[12px] font-medium text-[var(--color-success)] mb-1.5 flex items-center gap-1.5">
-              <span className="w-3 h-3 rounded-full bg-[var(--color-success)]" />
-              Normal (Green)
-            </label>
-            <div className="flex items-center gap-2">
-              <span className="text-[13px] text-[var(--color-text-secondary)]">Up to</span>
-              <input
-                type="number"
-                value={normalMax}
-                step="0.5"
-                min="0"
-                max="11.5"
-                disabled={locked}
-                onChange={(e) => handleNormalChange(Number(e.target.value))}
-                className="w-20 px-3 py-1.5 border border-[var(--color-border)] rounded-lg text-[13px] text-center disabled:opacity-50"
-              />
-              <span className="text-[13px] text-[var(--color-text-secondary)]">hours</span>
+          <ChangedMark changed={props.isChanged(NORMAL_KEY)}>
+            <div>
+              <label className="text-[12px] font-medium text-[var(--color-success)] mb-1.5 flex items-center gap-1.5">
+                <span className="w-3 h-3 rounded-full bg-[var(--color-success)]" />
+                Normal (Green)
+              </label>
+              <div className="flex items-center gap-2">
+                <span className="text-[13px] text-[var(--color-text-secondary)]">Up to</span>
+                <input
+                  type="number"
+                  value={normalMax}
+                  step="0.5"
+                  min="0"
+                  max="11.5"
+                  disabled={locked}
+                  onChange={(e) => handleNormalChange(Number(e.target.value))}
+                  className="w-20 px-3 py-1.5 border border-[var(--color-border)] rounded-lg text-[13px] text-center disabled:opacity-50"
+                />
+                <span className="text-[13px] text-[var(--color-text-secondary)]">hours</span>
+              </div>
             </div>
-          </div>
-          <div>
-            <label className="text-[12px] font-medium text-[var(--color-warning)] mb-1.5 flex items-center gap-1.5">
-              <span className="w-3 h-3 rounded-full bg-[var(--color-warning)]" />
-              Caution (Orange)
-            </label>
-            <div className="flex items-center gap-2">
-              <span className="text-[13px] text-[var(--color-text-secondary)]">Up to</span>
-              <input
-                type="number"
-                value={cautionMax}
-                step="0.5"
-                min="0.5"
-                max="12"
-                disabled={locked}
-                onChange={(e) => handleCautionChange(Number(e.target.value))}
-                className="w-20 px-3 py-1.5 border border-[var(--color-border)] rounded-lg text-[13px] text-center disabled:opacity-50"
-              />
-              <span className="text-[13px] text-[var(--color-text-secondary)]">hours</span>
+          </ChangedMark>
+          <ChangedMark changed={props.isChanged(CAUTION_KEY)}>
+            <div>
+              <label className="text-[12px] font-medium text-[var(--color-warning)] mb-1.5 flex items-center gap-1.5">
+                <span className="w-3 h-3 rounded-full bg-[var(--color-warning)]" />
+                Caution (Orange)
+              </label>
+              <div className="flex items-center gap-2">
+                <span className="text-[13px] text-[var(--color-text-secondary)]">Up to</span>
+                <input
+                  type="number"
+                  value={cautionMax}
+                  step="0.5"
+                  min="0.5"
+                  max="12"
+                  disabled={locked}
+                  onChange={(e) => handleCautionChange(Number(e.target.value))}
+                  className="w-20 px-3 py-1.5 border border-[var(--color-border)] rounded-lg text-[13px] text-center disabled:opacity-50"
+                />
+                <span className="text-[13px] text-[var(--color-text-secondary)]">hours</span>
+              </div>
             </div>
-          </div>
+          </ChangedMark>
           <div>
             <label className="text-[12px] font-medium text-[var(--color-danger)] mb-1.5 flex items-center gap-1.5">
               <span className="w-3 h-3 rounded-full bg-[var(--color-danger)]" />
@@ -549,37 +672,41 @@ function WeeklyLimitsSection(props: SectionCommonProps) {
   return (
     <Card title="Weekly Hour Limits" subtitle="Maximum hours and overtime thresholds" locked={locked} inheritState={inheritState ?? undefined}>
       <div className="space-y-4">
-        <div>
-          <label className="text-[12px] font-medium text-[var(--color-text-secondary)] mb-1.5 block">Max weekly hours</label>
-          <div className="flex items-center gap-2">
-            <input
-              type="number"
-              value={limit}
-              min="2"
-              max="168"
-              disabled={locked}
-              onChange={(e) => handleLimitChange(Number(e.target.value))}
-              className="w-20 px-3 py-1.5 border border-[var(--color-border)] rounded-lg text-[13px] text-center disabled:opacity-50"
-            />
-            <span className="text-[13px] text-[var(--color-text-muted)]">hours</span>
+        <ChangedMark changed={props.isChanged(LIMIT_KEY)}>
+          <div>
+            <label className="text-[12px] font-medium text-[var(--color-text-secondary)] mb-1.5 block">Max weekly hours</label>
+            <div className="flex items-center gap-2">
+              <input
+                type="number"
+                value={limit}
+                min="2"
+                max="168"
+                disabled={locked}
+                onChange={(e) => handleLimitChange(Number(e.target.value))}
+                className="w-20 px-3 py-1.5 border border-[var(--color-border)] rounded-lg text-[13px] text-center disabled:opacity-50"
+              />
+              <span className="text-[13px] text-[var(--color-text-muted)]">hours</span>
+            </div>
           </div>
-        </div>
-        <div>
-          <label className="text-[12px] font-medium text-[var(--color-text-secondary)] mb-1.5 block">Warning threshold</label>
-          <div className="flex items-center gap-2">
-            <input
-              type="number"
-              value={warn}
-              min="0"
-              max="167"
-              disabled={locked}
-              onChange={(e) => handleWarnChange(Number(e.target.value))}
-              className="w-20 px-3 py-1.5 border border-[var(--color-border)] rounded-lg text-[13px] text-center disabled:opacity-50"
-            />
-            <span className="text-[13px] text-[var(--color-text-muted)]">hours</span>
-            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-[var(--color-warning-muted)] text-[var(--color-warning)]">Warning only</span>
+        </ChangedMark>
+        <ChangedMark changed={props.isChanged(WARN_KEY)}>
+          <div>
+            <label className="text-[12px] font-medium text-[var(--color-text-secondary)] mb-1.5 block">Warning threshold</label>
+            <div className="flex items-center gap-2">
+              <input
+                type="number"
+                value={warn}
+                min="0"
+                max="167"
+                disabled={locked}
+                onChange={(e) => handleWarnChange(Number(e.target.value))}
+                className="w-20 px-3 py-1.5 border border-[var(--color-border)] rounded-lg text-[13px] text-center disabled:opacity-50"
+              />
+              <span className="text-[13px] text-[var(--color-text-muted)]">hours</span>
+              <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-[var(--color-warning-muted)] text-[var(--color-warning)]">Warning only</span>
+            </div>
           </div>
-        </div>
+        </ChangedMark>
       </div>
     </Card>
   );
@@ -600,20 +727,24 @@ function ApprovalSection(props: SectionCommonProps) {
   return (
     <Card title="Approval Workflow" subtitle="Schedule approval requirements" locked={locked} inheritState={inheritState ?? undefined}>
       <div className="divide-y divide-[var(--color-border)]">
-        <ToggleRow
-          label="Require GM approval"
-          description="All requested schedules need GM confirmation before activating"
-          value={required}
-          locked={locked}
-          onChange={(v) => props.queueChange(REQ_KEY, v)}
-        />
-        <ToggleRow
-          label="Auto-confirm SV drafts"
-          description="Automatically confirm schedules created in draft mode by SV+ users"
-          value={autoConfirm}
-          locked={locked}
-          onChange={(v) => props.queueChange(AUTO_KEY, v)}
-        />
+        <ChangedMark changed={props.isChanged(REQ_KEY)}>
+          <ToggleRow
+            label="Require GM approval"
+            description="All requested schedules need GM confirmation before activating"
+            value={required}
+            locked={locked}
+            onChange={(v) => props.queueChange(REQ_KEY, v)}
+          />
+        </ChangedMark>
+        <ChangedMark changed={props.isChanged(AUTO_KEY)}>
+          <ToggleRow
+            label="Auto-confirm SV drafts"
+            description="Automatically confirm schedules created in draft mode by SV+ users"
+            value={autoConfirm}
+            locked={locked}
+            onChange={(v) => props.queueChange(AUTO_KEY, v)}
+          />
+        </ChangedMark>
       </div>
     </Card>
   );
@@ -660,39 +791,43 @@ function WorkRulesSection(props: SectionCommonProps) {
   return (
     <Card title="Work Rules" subtitle="Default schedule and break duration" locked={locked} inheritState={inheritState ?? undefined}>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div>
-          <label className="text-[12px] font-medium text-[var(--color-text-secondary)] mb-1.5 block">Default schedule duration</label>
-          <div className="flex items-center gap-2">
-            <input
-              type="number"
-              value={shiftDuration}
-              min="30"
-              max="1440"
-              step="30"
-              disabled={locked}
-              onChange={(e) => handleShiftDurationChange(Number(e.target.value))}
-              className="w-20 px-3 py-1.5 border border-[var(--color-border)] rounded-lg text-[13px] text-center disabled:opacity-50"
-            />
-            <span className="text-[13px] text-[var(--color-text-muted)]">min</span>
-            {shiftDuration >= 60 && <span className="text-[11px] text-[var(--color-text-muted)]">= {Math.floor(shiftDuration / 60)}h {shiftDuration % 60 > 0 ? `${shiftDuration % 60}m` : ""}</span>}
+        <ChangedMark changed={props.isChanged(SHIFT_DURATION_KEY)}>
+          <div>
+            <label className="text-[12px] font-medium text-[var(--color-text-secondary)] mb-1.5 block">Default schedule duration</label>
+            <div className="flex items-center gap-2">
+              <input
+                type="number"
+                value={shiftDuration}
+                min="30"
+                max="1440"
+                step="30"
+                disabled={locked}
+                onChange={(e) => handleShiftDurationChange(Number(e.target.value))}
+                className="w-20 px-3 py-1.5 border border-[var(--color-border)] rounded-lg text-[13px] text-center disabled:opacity-50"
+              />
+              <span className="text-[13px] text-[var(--color-text-muted)]">min</span>
+              {shiftDuration >= 60 && <span className="text-[11px] text-[var(--color-text-muted)]">= {Math.floor(shiftDuration / 60)}h {shiftDuration % 60 > 0 ? `${shiftDuration % 60}m` : ""}</span>}
+            </div>
           </div>
-        </div>
-        <div>
-          <label className="text-[12px] font-medium text-[var(--color-text-secondary)] mb-1.5 block">Default break</label>
-          <div className="flex items-center gap-2">
-            <input
-              type="number"
-              value={breakDuration}
-              min="1"
-              max="480"
-              disabled={locked}
-              onChange={(e) => handleBreakDurationChange(Number(e.target.value))}
-              className="w-20 px-3 py-1.5 border border-[var(--color-border)] rounded-lg text-[13px] text-center disabled:opacity-50"
-            />
-            <span className="text-[13px] text-[var(--color-text-muted)]">min</span>
-            {breakDuration >= 60 && <span className="text-[11px] text-[var(--color-text-muted)]">= {Math.floor(breakDuration / 60)}h {breakDuration % 60 > 0 ? `${breakDuration % 60}m` : ""}</span>}
+        </ChangedMark>
+        <ChangedMark changed={props.isChanged(BREAK_DURATION_KEY)}>
+          <div>
+            <label className="text-[12px] font-medium text-[var(--color-text-secondary)] mb-1.5 block">Default break</label>
+            <div className="flex items-center gap-2">
+              <input
+                type="number"
+                value={breakDuration}
+                min="1"
+                max="480"
+                disabled={locked}
+                onChange={(e) => handleBreakDurationChange(Number(e.target.value))}
+                className="w-20 px-3 py-1.5 border border-[var(--color-border)] rounded-lg text-[13px] text-center disabled:opacity-50"
+              />
+              <span className="text-[13px] text-[var(--color-text-muted)]">min</span>
+              {breakDuration >= 60 && <span className="text-[11px] text-[var(--color-text-muted)]">= {Math.floor(breakDuration / 60)}h {breakDuration % 60 > 0 ? `${breakDuration % 60}m` : ""}</span>}
+            </div>
           </div>
-        </div>
+        </ChangedMark>
       </div>
     </Card>
   );
@@ -713,108 +848,299 @@ function AttendanceSettingsSection(props: SectionCommonProps) {
   return (
     <Card title="Attendance" subtitle="Late and early-leave detection thresholds" locked={locked} inheritState={inheritState ?? undefined}>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div>
-          <label className="text-[12px] font-medium text-[var(--color-text-secondary)] mb-1.5 block">Late buffer</label>
-          <div className="flex items-center gap-2">
-            <input
-              type="number"
-              value={lateBuffer}
-              min="0"
-              max="120"
-              disabled={locked}
-              onChange={(e) => props.queueChange(LATE_KEY, Math.max(0, Math.min(120, Number(e.target.value))))}
-              className="w-20 px-3 py-1.5 border border-[var(--color-border)] rounded-lg text-[13px] text-center disabled:opacity-50"
-            />
-            <span className="text-[13px] text-[var(--color-text-muted)]">min after start</span>
+        <ChangedMark changed={props.isChanged(LATE_KEY)}>
+          <div>
+            <label className="text-[12px] font-medium text-[var(--color-text-secondary)] mb-1.5 block">Late buffer</label>
+            <div className="flex items-center gap-2">
+              <input
+                type="number"
+                value={lateBuffer}
+                min="0"
+                max="120"
+                disabled={locked}
+                onChange={(e) => props.queueChange(LATE_KEY, Math.max(0, Math.min(120, Number(e.target.value))))}
+                className="w-20 px-3 py-1.5 border border-[var(--color-border)] rounded-lg text-[13px] text-center disabled:opacity-50"
+              />
+              <span className="text-[13px] text-[var(--color-text-muted)]">min after start</span>
+            </div>
           </div>
-        </div>
-        <div>
-          <label className="text-[12px] font-medium text-[var(--color-text-secondary)] mb-1.5 block">Early-leave threshold</label>
-          <div className="flex items-center gap-2">
-            <input
-              type="number"
-              value={earlyThresh}
-              min="0"
-              max="120"
-              disabled={locked}
-              onChange={(e) => props.queueChange(EARLY_KEY, Math.max(0, Math.min(120, Number(e.target.value))))}
-              className="w-20 px-3 py-1.5 border border-[var(--color-border)] rounded-lg text-[13px] text-center disabled:opacity-50"
-            />
-            <span className="text-[13px] text-[var(--color-text-muted)]">min before end</span>
+        </ChangedMark>
+        <ChangedMark changed={props.isChanged(EARLY_KEY)}>
+          <div>
+            <label className="text-[12px] font-medium text-[var(--color-text-secondary)] mb-1.5 block">Early-leave threshold</label>
+            <div className="flex items-center gap-2">
+              <input
+                type="number"
+                value={earlyThresh}
+                min="0"
+                max="120"
+                disabled={locked}
+                onChange={(e) => props.queueChange(EARLY_KEY, Math.max(0, Math.min(120, Number(e.target.value))))}
+                className="w-20 px-3 py-1.5 border border-[var(--color-border)] rounded-lg text-[13px] text-center disabled:opacity-50"
+              />
+              <span className="text-[13px] text-[var(--color-text-muted)]">min before end</span>
+            </div>
           </div>
-        </div>
+        </ChangedMark>
       </div>
     </Card>
   );
 }
 
-// ─── 6. Business Day Start (store only) ──────────────────
+// ─── HourMinuteSelect (HH : MM 분리 셀렉트) ─────────
 
-function BusinessDayStartSection({ store, draft, onChange }: { store: Store; draft: Record<string, string> | null; onChange: (v: Record<string, string>) => void }) {
-  // draft 우선, 없으면 store 값
-  const current = draft ?? (store.day_start_time as Record<string, string> | null) ?? { all: "06:00" };
-  const isAllMode = current.all !== undefined && Object.keys(current).length === 1;
-  const allTime = current.all ?? "06:00";
-  const perDay: Record<string, string> = isAllMode
-    ? { sun: allTime, mon: allTime, tue: allTime, wed: allTime, thu: allTime, fri: allTime, sat: allTime }
-    : { sun: "06:00", mon: "06:00", tue: "06:00", wed: "06:00", thu: "06:00", fri: "06:00", sat: "06:00", ...current };
+function hourLabel(h: number): string {
+  if (h < 24) return String(h);
+  return `${h - 24} (+1d)`;
+}
 
-  function setAllMode(time: string) {
-    onChange({ all: time });
-  }
-  function setPerDayMode() {
-    onChange({ ...perDay });
-  }
-  function updatePerDay(day: string, time: string) {
-    onChange({ ...perDay, [day]: time });
-  }
+const MINUTE_OPTIONS = Array.from({ length: 60 }, (_, i) => i);
+
+function HourMinuteSelect({ value, onChange, maxHour = 23, className }: {
+  value: string;
+  onChange: (v: string) => void;
+  maxHour?: number;
+  className?: string;
+}) {
+  const [hh, mm] = (value || "00:00").split(":").map(Number);
+  const hours = Array.from({ length: maxHour + 1 }, (_, i) => i);
+  const base = className ?? "px-2 py-1.5 border border-[var(--color-border)] rounded-lg text-[13px] bg-[var(--color-bg)] text-[var(--color-text)]";
 
   return (
-    <Card title="Business Day Start" subtitle="When does a new business day begin? Schedules and attendance crossing this time are anchored to the previous day. Pick a quiet time when no staff is on shift (e.g. 04:00 for morning store, or staff handover time for 24-hour stores).">
-      <div className="space-y-3">
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setAllMode(allTime)}
-            className={`px-3 py-1.5 rounded-lg text-[12px] font-semibold transition-colors ${isAllMode ? "bg-[var(--color-accent)] text-white" : "bg-[var(--color-bg)] text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-hover)]"}`}
-          >
-            Same time every day
-          </button>
-          <button
-            type="button"
-            onClick={setPerDayMode}
-            className={`px-3 py-1.5 rounded-lg text-[12px] font-semibold transition-colors ${!isAllMode ? "bg-[var(--color-accent)] text-white" : "bg-[var(--color-bg)] text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-hover)]"}`}
-          >
-            Per day
-          </button>
-        </div>
+    <div className="inline-flex items-center gap-1">
+      <select
+        value={hh ?? 0}
+        onChange={(e) => onChange(`${String(Number(e.target.value)).padStart(2, "0")}:${String(mm ?? 0).padStart(2, "0")}`)}
+        className={base}
+      >
+        {hours.map((h) => (
+          <option key={h} value={h}>{hourLabel(h)}</option>
+        ))}
+      </select>
+      <span className="text-[var(--color-text-muted)] text-[13px] font-medium">:</span>
+      <select
+        value={mm ?? 0}
+        onChange={(e) => onChange(`${String(hh ?? 0).padStart(2, "0")}:${String(Number(e.target.value)).padStart(2, "0")}`)}
+        className={base}
+      >
+        {MINUTE_OPTIONS.map((m) => (
+          <option key={m} value={m}>{String(m).padStart(2, "0")}</option>
+        ))}
+      </select>
+    </div>
+  );
+}
 
-        {isAllMode ? (
-          <div>
-            <label className="text-[12px] font-medium text-[var(--color-text-secondary)] mb-1.5 block">Day start time</label>
-            <input
-              type="time"
-              value={allTime}
-              onChange={(e) => setAllMode(e.target.value)}
-              className="px-3 py-1.5 border border-[var(--color-border)] rounded-lg text-[13px]"
-            />
-          </div>
-        ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2">
-            {(["sun", "mon", "tue", "wed", "thu", "fri", "sat"] as const).map((d) => (
-              <div key={d}>
-                <label className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-muted)] mb-1 block">{d}</label>
-                <input
-                  type="time"
-                  value={perDay[d] ?? "06:00"}
-                  onChange={(e) => updatePerDay(d, e.target.value)}
-                  className="w-full px-2 py-1 border border-[var(--color-border)] rounded text-[12px]"
-                />
+// ─── 6. Schedule Range (org + store) ──────────────────
+
+const DAYS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"] as const;
+const DEFAULT_RANGE = { start: "06:00", end: "23:00" };
+
+/** Format a schedule_range object into a readable summary string */
+function formatRangeSummary(range: Record<string, { start: string; end: string }> | undefined | null): string {
+  if (!range) return "6:00 – 23:00";
+  if (range.all) return `${range.all.start} – ${range.all.end}`;
+  const entries = DAYS.map((d) => range[d]).filter(Boolean);
+  if (entries.length === 0) return "6:00 – 23:00";
+  const allSame = entries.every((e) => e.start === entries[0].start && e.end === entries[0].end);
+  if (allSame) return `${entries[0].start} – ${entries[0].end}`;
+  return "Per-day custom";
+}
+
+interface ScheduleRangeSectionProps extends SectionCommonProps {
+  deletedKeys: string[];
+  draftKeys: string[];
+}
+
+/** schedule.range 데이터 구조:
+ * { mode: "all"|"per_day", all: {start,end}, per_day: {sun:{start,end}, mon:...} }
+ * all과 per_day는 항상 별도 저장. mode가 어느 쪽이 활성인지 결정.
+ */
+interface RangeData {
+  mode: "all" | "per_day";
+  all: { start: string; end: string };
+  per_day: Record<string, { start: string; end: string }>;
+}
+
+function normalizeRange(raw: unknown): RangeData {
+  const d = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
+  const defaultAll = DEFAULT_RANGE;
+  const defaultPerDay = Object.fromEntries(DAYS.map((k) => [k, DEFAULT_RANGE]));
+
+  // 새 포맷 (mode 필드 존재)
+  if ("mode" in d) {
+    const all = (d.all && typeof d.all === "object" && "start" in (d.all as Record<string, unknown>)) ? d.all as { start: string; end: string } : defaultAll;
+    const pd = d.per_day && typeof d.per_day === "object" ? { ...defaultPerDay, ...(d.per_day as Record<string, { start: string; end: string }>) } : defaultPerDay;
+    return { mode: d.mode === "per_day" ? "per_day" : "all", all, per_day: pd };
+  }
+
+  // 레거시 포맷 호환: {"all":{...}} or {"sun":{...},"mon":{...}}
+  if ("all" in d && typeof d.all === "object") {
+    const all = d.all as { start: string; end: string };
+    return { mode: "all", all, per_day: Object.fromEntries(DAYS.map((k) => [k, all])) };
+  }
+  // per-day 레거시
+  const hasDay = DAYS.some((k) => k in d);
+  if (hasDay) {
+    const pd = { ...defaultPerDay };
+    for (const k of DAYS) if (k in d && typeof d[k] === "object") pd[k] = d[k] as { start: string; end: string };
+    const starts = Object.values(pd).map((v) => v.start);
+    const ends = Object.values(pd).map((v) => v.end);
+    return { mode: "per_day", all: { start: starts.sort()[0]!, end: ends.sort().reverse()[0]! }, per_day: pd };
+  }
+  return { mode: "all", all: defaultAll, per_day: defaultPerDay };
+}
+
+function ScheduleRangeSection(props: ScheduleRangeSectionProps) {
+  const RANGE_KEY = "schedule.range";
+  const isStore = props.scope === "store";
+
+  const isPendingDelete = props.deletedKeys.includes(RANGE_KEY);
+  const hasStoreOverride = props.isOverridden(RANGE_KEY);
+  const hasDraftValue = props.draftKeys.includes(RANGE_KEY);
+  const isInherited = isStore && (isPendingDelete || (!hasStoreOverride && !hasDraftValue));
+  const locked = props.isLocked(RANGE_KEY);
+
+  const currentValue = props.getValue(RANGE_KEY);
+  const range = normalizeRange(currentValue);
+
+  // 서버 저장값 (draft 미포함) — 되돌리기 비교용. ref로 저장해서 draft 변경에 영향 안 받음.
+  const serverRef = useRef<RangeData>(range);
+  useEffect(() => {
+    if (!hasDraftValue) serverRef.current = range;
+  }, [hasDraftValue, range]);
+  const server = serverRef.current;
+
+  function save(next: RangeData) {
+    // 서버 저장값과 동일하면 draft에서 제거 (= 변경 없음)
+    props.queueChange(RANGE_KEY, next);
+  }
+
+  /** mode만 전환하고 데이터는 건드리지 않음. 원래 mode로 돌아오면 dirty 아님 */
+  function switchMode(newMode: "all" | "per_day") {
+    if (range.mode === newMode) return;
+    save({ ...range, mode: newMode });
+  }
+
+  function handleInheritToggle(inherit: boolean) {
+    if (inherit) {
+      // custom 값을 localStorage에 보존
+      if (props.storeId) {
+        localStorage.setItem(customCacheKey(props.storeId, RANGE_KEY), JSON.stringify(range));
+      }
+      props.queueDeleteKey(RANGE_KEY);
+    } else {
+      props.unqueueDeleteKey(RANGE_KEY);
+      // localStorage에서 복원, 없으면 현재 effective
+      const cached = props.storeId ? localStorage.getItem(customCacheKey(props.storeId, RANGE_KEY)) : null;
+      const restored = cached ? JSON.parse(cached) : range;
+      props.forceQueueChange(RANGE_KEY, restored);
+    }
+  }
+
+  // Per day에서 "Fill from Same" — all 값으로 모든 요일 채우기
+  function fillPerDayFromAll() {
+    save({ ...range, per_day: Object.fromEntries(DAYS.map((d) => [d, range.all])) });
+  }
+
+  function resetDay(day: string) {
+    save({ ...range, per_day: { ...range.per_day, [day]: server.per_day[day] ?? DEFAULT_RANGE } });
+  }
+
+  const inheritedRange = isInherited ? range : null;
+
+  return (
+    <Card
+      title="Schedule Range"
+      locked={locked}
+      inheritState={isStore ? {
+        isInherited,
+        onToggle: () => handleInheritToggle(!isInherited),
+      } : undefined}
+    >
+      {/* Inherited mode */}
+      {isInherited ? (
+        <div className="opacity-50">
+          <p className="text-[12px] text-[var(--color-text-muted)] italic mb-2">
+            Using organization default
+          </p>
+          {inheritedRange && inheritedRange.mode === "per_day" ? (
+            <div className="space-y-1.5 pointer-events-none">
+              {DAYS.map((d) => (
+                <div key={d} className="flex items-center gap-3">
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-[var(--color-text-muted)] w-10 shrink-0">{d}</span>
+                  <span className="text-[12px] text-[var(--color-text-secondary)]">{inheritedRange.per_day[d]?.start ?? "06:00"} – {inheritedRange.per_day[d]?.end ?? "23:00"}</span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-[12px] text-[var(--color-text-secondary)]">{inheritedRange?.all.start ?? "06:00"} – {inheritedRange?.all.end ?? "23:00"} (every day)</p>
+          )}
+        </div>
+      ) : (
+        <ChangedMark changed={props.isChanged(RANGE_KEY)}>
+          <div className="space-y-4">
+            {/* Mode toggle */}
+            <div className="flex items-center gap-2">
+              <button type="button" onClick={() => switchMode("all")}
+                className={`px-3 py-1.5 rounded-lg text-[12px] font-semibold transition-colors ${range.mode === "all" ? "bg-[var(--color-accent)] text-white" : "bg-[var(--color-bg)] text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-hover)]"}`}>
+                Same every day
+              </button>
+              <button type="button" onClick={() => switchMode("per_day")}
+                className={`px-3 py-1.5 rounded-lg text-[12px] font-semibold transition-colors ${range.mode === "per_day" ? "bg-[var(--color-accent)] text-white" : "bg-[var(--color-bg)] text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-hover)]"}`}>
+                Per day
+              </button>
+            </div>
+
+            {range.mode === "all" ? (
+              <div className="flex items-center gap-3">
+                <div>
+                  <label className="text-[12px] font-medium text-[var(--color-text-secondary)] mb-1.5 block">Start</label>
+                  <HourMinuteSelect value={range.all.start} maxHour={23} onChange={(v) => save({ ...range, all: { ...range.all, start: v } })} />
+                </div>
+                <span className="text-[var(--color-text-muted)] mt-5">–</span>
+                <div>
+                  <label className="text-[12px] font-medium text-[var(--color-text-secondary)] mb-1.5 block">End</label>
+                  <HourMinuteSelect value={range.all.end} maxHour={48} onChange={(v) => save({ ...range, all: { ...range.all, end: v } })} />
+                </div>
               </div>
-            ))}
+            ) : (
+              <div className="space-y-2">
+                {/* Fill from "Same" button */}
+                <button type="button" onClick={fillPerDayFromAll}
+                  className="text-[11px] text-[var(--color-accent)] hover:text-[var(--color-accent-light)] transition-colors font-medium">
+                  ↻ Fill all days with "{range.all.start} – {range.all.end}"
+                </button>
+                {DAYS.map((d) => {
+                  const dayVal = range.per_day[d] ?? DEFAULT_RANGE;
+                  const serverDay = server.per_day[d] ?? DEFAULT_RANGE;
+                  const isDayChanged = hasDraftValue && (dayVal.start !== serverDay.start || dayVal.end !== serverDay.end);
+                  return (
+                    <div key={d} className="flex items-center gap-3">
+                      <span className="text-[11px] font-bold uppercase tracking-wider text-[var(--color-text-muted)] w-10 shrink-0">{d}</span>
+                      <HourMinuteSelect value={dayVal.start} maxHour={23}
+                        onChange={(v) => save({ ...range, per_day: { ...range.per_day, [d]: { ...dayVal, start: v } } })}
+                        className="px-1.5 py-1 border border-[var(--color-border)] rounded text-[12px] bg-[var(--color-bg)] text-[var(--color-text)]" />
+                      <span className="text-[var(--color-text-muted)] text-[12px]">–</span>
+                      <HourMinuteSelect value={dayVal.end} maxHour={48}
+                        onChange={(v) => save({ ...range, per_day: { ...range.per_day, [d]: { ...dayVal, end: v } } })}
+                        className="px-1.5 py-1 border border-[var(--color-border)] rounded text-[12px] bg-[var(--color-bg)] text-[var(--color-text)]" />
+                      {isDayChanged && (
+                        <button type="button" onClick={() => resetDay(d)} title={`Reset ${d}`}
+                          className="text-[var(--color-text-muted)] hover:text-[var(--color-accent)] transition-colors shrink-0">
+                          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+                            <path d="M2.5 2.5v3.5h3.5" /><path d="M2.5 6A5 5 0 1 1 3.5 9.5" />
+                          </svg>
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
-        )}
-      </div>
+        </ChangedMark>
+      )}
     </Card>
   );
 }

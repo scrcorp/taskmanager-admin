@@ -125,19 +125,22 @@ export function ScheduleBlock({ schedule, showCost, attendance, currentStoreId, 
     ? `${formatTime(schedule.start_time)}–${formatTime(schedule.break_start_time)} · ${formatTime(schedule.break_end_time)}–${formatTime(schedule.end_time)}`
     : `${formatTime(schedule.start_time)}–${formatTime(schedule.end_time)}`;
 
-  const isOtherStore = schedule.store_id !== currentStoreId;
+  // "__all__" = All 모드 → dimming 없이 모든 스토어 표시
+  const isAllMode = currentStoreId === "__all__";
+  const isOtherStore = !isAllMode && schedule.store_id !== currentStoreId;
   const roleName = schedule.work_role_name_snapshot || schedule.work_role_name || "Shift";
   const positionName = schedule.position_snapshot || "—";
+  const showStoreName = isAllMode; // All 모드에서는 스토어명 항상 표시
 
   if (isOtherStore) {
     return (
       <div
-        className="rounded-md border-[1.5px] border-dashed border-[var(--color-text-muted)] px-2 py-1.5 opacity-40 text-[var(--color-text-muted)]"
+        className="rounded-md border-[1.5px] border-dashed border-[var(--color-border)] px-2 py-1.5 bg-[var(--color-bg)] text-[var(--color-text-secondary)]"
         title={`Scheduled at ${schedule.store_name ?? "another store"}`}
       >
+        <div className="text-[10px] font-semibold truncate mb-0.5">{schedule.store_name ?? "—"}</div>
         <div className="text-[11px] font-semibold leading-tight truncate">{roleName} · {positionName}</div>
         <div className="text-[10px] mt-0.5">{timeRange} ({fmtH(hours)}h)</div>
-        <div className="text-[10px] mt-0.5 truncate">@ {schedule.store_name ?? "—"}</div>
       </div>
     );
   }
@@ -185,6 +188,11 @@ export function ScheduleBlock({ schedule, showCost, attendance, currentStoreId, 
       `}
       style={isRequested ? { backgroundImage: pendingBg } : undefined}
     >
+      {/* Row 0: Store name (멀티/All 모드) */}
+      {showStoreName && schedule.store_name && (
+        <div className="text-[10px] font-semibold text-[var(--color-accent)] truncate mb-0.5">{schedule.store_name}</div>
+      )}
+
       {/* Row 1: Role · Position + hours */}
       <div className="flex items-center justify-between gap-1">
         <span className="text-[11px] font-semibold text-[var(--color-text)] truncate flex-1 min-w-0">
@@ -194,7 +202,9 @@ export function ScheduleBlock({ schedule, showCost, attendance, currentStoreId, 
       </div>
 
       {/* Row 2: Time range */}
-      <div className="text-[10px] text-[var(--color-text-secondary)] tabular-nums mt-0.5">{timeRange}</div>
+      <div className="text-[10px] text-[var(--color-text-secondary)] tabular-nums mt-0.5">
+        {timeRange}
+      </div>
 
       {/* Row 2.5: Timeline bar — status색 바. break 있으면 중간에 회색 gap. */}
       {grossHours > 0 && !isRejected && !isCancelled && (

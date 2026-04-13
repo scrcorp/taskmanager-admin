@@ -13,6 +13,7 @@ import type { User, Store, UserStoreAssignment } from "@/types";
 /** 사용자 목록 필터 타입 (User list filter type) */
 interface UserFilters {
   store_id?: string;
+  store_ids?: string[];
   role_id?: string;
   is_active?: boolean;
 }
@@ -32,7 +33,11 @@ export const useUsers = (
     queryKey: ["users", filters],
     queryFn: async (): Promise<User[]> => {
       const params: Record<string, string | boolean> = {};
-      if (filters?.store_id) params.store_id = filters.store_id;
+      if (filters?.store_ids && filters.store_ids.length > 0) {
+        params.store_ids = filters.store_ids.join(",");
+      } else if (filters?.store_id) {
+        params.store_id = filters.store_id;
+      }
       if (filters?.role_id) params.role_id = filters.role_id;
       if (filters?.is_active !== undefined)
         params.is_active = filters.is_active;
