@@ -4,13 +4,15 @@
  * ScheduleEditModal — server types 직접 사용. mockup type 의존 없음.
  */
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { useWorkRoles } from "@/hooks/useWorkRoles";
+import { useUserStores } from "@/hooks/useUsers";
 import { useResolveSetting } from "@/hooks/useSettings";
-import type { Schedule, User, WorkRole } from "@/types";
+import type { Schedule, User, WorkRole, Store } from "@/types";
 
 export interface ScheduleEditPayload {
   userId: string;
+  storeId: string;
   date: string;
   startTime: string;  // "HH:MM"
   endTime: string;
@@ -36,6 +38,10 @@ interface Props {
   prefilledStartTime?: string;
   users: User[];
   storeId: string;
+  /** 선택 가능한 store 목록 — store가 2개 이상이면 드롭다운 표시 */
+  stores?: Store[];
+  /** 현재 캘린더에서 선택된 store ID 목록 (All이면 전체 stores) */
+  selectedStoreIds?: string[];
   /** 선택된 user의 cascade rate (user → store → org) — placeholder/Apply 버튼용 */
   inheritedRate?: number | null;
   /** Cost 정보 표시/편집 가능 여부. false면 hourly_rate input 자체 숨김 (SV/Staff). */
@@ -101,7 +107,7 @@ function computeAutoBreak(startHHMM: string, endHHMM: string, breakMin: number):
   return { start: minutesToTime(mid), end: minutesToTime(mid + breakMin) };
 }
 
-export function ScheduleEditModal({ open, mode, schedule, prefilledUserId, prefilledDate, prefilledStartTime, users, storeId, inheritedRate, showCost = true, onClose, onSave, onDelete, isSaving }: Props) {
+export function ScheduleEditModal({ open, mode, schedule, prefilledUserId, prefilledDate, prefilledStartTime, users, storeId, stores, selectedStoreIds, inheritedRate, showCost = true, onClose, onSave, onDelete, isSaving }: Props) {
   const [userId, setUserId] = useState(prefilledUserId || users[0]?.id || "");
   const [date, setDate] = useState(prefilledDate || new Date().toISOString().slice(0, 10));
   const [startTime, setStartTime] = useState("09:00");
@@ -114,18 +120,40 @@ export function ScheduleEditModal({ open, mode, schedule, prefilledUserId, prefi
   // hourly rate input as string ("" = clear/null)
   const [hourlyRateInput, setHourlyRateInput] = useState<string>("");
 
+  // 선택된 staff의 소속 매장 조회
+  const userStoresQ = useUserStores(userId || undefined);
+  const userStoreIds = useMemo(() => new Set((userStoresQ.data ?? []).map((s) => s.id)), [userStoresQ.data]);
+
+  // Store selector — staff 소속 store만 표시, store 2개 이상이면 드롭다운
+  const [modalStoreId, setModalStoreId] = useState(storeId);
+  const availableStores = useMemo(() => {
+    if (!stores || stores.length === 0) return [];
+    // staff 소속 store로 필터
+    const filtered = userStoreIds.size > 0
+      ? stores.filter((s) => userStoreIds.has(s.id))
+      : stores;
+    return filtered;
+  }, [stores, userStoreIds]);
+  const needsStoreSelector = availableStores.length > 0;
+  const effectiveStoreId = modalStoreId || availableStores[0]?.id || storeId || "";
+
+  // staff 변경 후 소속 store 로드되면 첫 번째 store 자동 선택
+  useEffect(() => {
+    if (!modalStoreId && availableStores.length > 0) setModalStoreId(availableStores[0]!.id);
+  }, [availableStores, modalStoreId]);
+
   // dirty flags: 사용자가 직접 편집했는지. true면 work role 변경시 auto-prefill 안 함.
   const timeDirtyRef = useRef(false);
   const endTimeDirtyRef = useRef(false); // end만 별도로 편집했는지
   const breakDirtyRef = useRef(false);
 
-  const workRolesQ = useWorkRoles(storeId || undefined);
+  const workRolesQ = useWorkRoles(effectiveStoreId || undefined);
   const workRoles = workRolesQ.data ?? [];
 
   // 설정된 기본 break/shift 길이 (분).
-  const breakDurationQ = useResolveSetting("break.duration_minutes", storeId ? { store_id: storeId } : undefined);
+  const breakDurationQ = useResolveSetting("break.duration_minutes", effectiveStoreId ? { store_id: effectiveStoreId } : undefined);
   const defaultBreakMin = Number(breakDurationQ.data?.value ?? 30);
-  const shiftDurationQ = useResolveSetting("work.default_schedule_duration_minutes", storeId ? { store_id: storeId } : undefined);
+  const shiftDurationQ = useResolveSetting("work.default_schedule_duration_minutes", effectiveStoreId ? { store_id: effectiveStoreId } : undefined);
   const defaultShiftMin = Number(shiftDurationQ.data?.value ?? 330);
 
   // 모달 open 전환 시에만 state 리셋.
@@ -133,6 +161,7 @@ export function ScheduleEditModal({ open, mode, schedule, prefilledUserId, prefi
   // 대신 open=true로 전환되는 "그 순간"에만 prefilled 값을 읽어 초기화.
   useEffect(() => {
     if (!open) return;
+    setModalStoreId(storeId || availableStores[0]?.id || stores?.[0]?.id || "");
     timeDirtyRef.current = false;
     endTimeDirtyRef.current = false;
     breakDirtyRef.current = false;
@@ -269,6 +298,7 @@ export function ScheduleEditModal({ open, mode, schedule, prefilledUserId, prefi
     }
     onSave({
       userId,
+      storeId: effectiveStoreId,
       date,
       startTime,
       endTime,
@@ -314,7 +344,7 @@ export function ScheduleEditModal({ open, mode, schedule, prefilledUserId, prefi
               )}
               <select
                 value={userId}
-                onChange={(e) => setUserId(e.target.value)}
+                onChange={(e) => { setUserId(e.target.value); setModalStoreId(""); setWorkRoleId(""); }}
                 className="flex-1 px-3 py-2 border border-[var(--color-border)] rounded-lg text-[13px] bg-[var(--color-surface)]"
               >
                 {users.map((u) => (
@@ -323,6 +353,22 @@ export function ScheduleEditModal({ open, mode, schedule, prefilledUserId, prefi
               </select>
             </div>
           </div>
+
+          {/* Store — store가 2개 이상이면 항상 표시 */}
+          {needsStoreSelector && (
+            <div>
+              <label className="block text-[11px] font-semibold uppercase tracking-wider text-[var(--color-text-muted)] mb-1.5">Store</label>
+              <select
+                value={modalStoreId}
+                onChange={(e) => { setModalStoreId(e.target.value); setWorkRoleId(""); }}
+                className="w-full px-3 py-2 border border-[var(--color-border)] rounded-lg text-[13px] bg-[var(--color-surface)]"
+              >
+                {availableStores.map((s) => (
+                  <option key={s.id} value={s.id}>{s.name}</option>
+                ))}
+              </select>
+            </div>
+          )}
 
           {/* Date */}
           <div>

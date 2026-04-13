@@ -7,13 +7,16 @@
  * 모든 schedule 처리는 server `Schedule` 형태(start_time/end_time string, user_id/store_id)로.
  */
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef, useCallback } from "react";
+import { useQueries } from "@tanstack/react-query";
+import api from "@/lib/api";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useSchedules, useConfirmSchedule, useRejectSchedule, useDeleteSchedule, useSubmitSchedule, useRevertSchedule, useCancelSchedule, useCreateSchedule, useUpdateSchedule, useSwapSchedule } from "@/hooks/useSchedules";
 import { useUsers } from "@/hooks/useUsers";
 import { useStores } from "@/hooks/useStores";
 import { useOrganization } from "@/hooks/useOrganization";
 import { useAttendances } from "@/hooks/useAttendances";
+import { useResolveSetting } from "@/hooks/useSettings";
 import { useAuthStore } from "@/stores/authStore";
 import type { Schedule, Store, User } from "@/types";
 import { ScheduleBlock } from "./ScheduleBlock";
@@ -140,6 +143,98 @@ function effectiveRate(
   return null;
 }
 
+// ─── Store Multi-Select ─────────────────────────────────
+
+function StoreMultiSelect({ stores, selectedStores, onChange }: {
+  stores: Store[];
+  selectedStores: string[];
+  onChange: (ids: string[]) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const isAll = selectedStores.length === 0;
+
+  // 외부 클릭 시 닫기
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
+  function toggleStore(id: string) {
+    if (selectedStores.includes(id)) {
+      const next = selectedStores.filter((s) => s !== id);
+      onChange(next); // 빈 배열이면 All
+    } else {
+      onChange([...selectedStores, id]);
+    }
+  }
+
+  function selectAll() {
+    onChange([]);
+  }
+
+  const label = isAll
+    ? "All Stores"
+    : selectedStores.length === 1
+      ? (stores.find((s) => s.id === selectedStores[0])?.name ?? "Store")
+      : `${selectedStores.length} Stores`;
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        className="px-3 py-1.5 bg-[var(--color-surface)] border-2 border-[var(--color-accent)] rounded-lg text-[13px] font-semibold text-[var(--color-accent)] cursor-pointer max-w-[200px] truncate flex items-center gap-1.5"
+      >
+        <span className="truncate">{label}</span>
+        <svg width="10" height="6" viewBox="0 0 10 6" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" className={`shrink-0 transition-transform ${open ? "rotate-180" : ""}`}>
+          <polyline points="1 1 5 5 9 1" />
+        </svg>
+      </button>
+
+      {open && (
+        <div className="absolute top-full left-0 mt-1 z-50 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg shadow-lg min-w-[200px] max-h-[300px] overflow-y-auto py-1">
+          {/* All option */}
+          <button
+            type="button"
+            onClick={selectAll}
+            className={`w-full px-3 py-2 text-left text-[12px] font-semibold flex items-center gap-2 hover:bg-[var(--color-surface-hover)] transition-colors ${isAll ? "text-[var(--color-accent)]" : "text-[var(--color-text-secondary)]"}`}
+          >
+            <span className={`w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 ${isAll ? "bg-[var(--color-accent)] border-[var(--color-accent)]" : "border-[var(--color-border)]"}`}>
+              {isAll && <svg width="10" height="8" viewBox="0 0 10 8" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="1 4 4 7 9 1" /></svg>}
+            </span>
+            All Stores
+          </button>
+
+          <div className="border-t border-[var(--color-border)] my-1" />
+
+          {/* Store options */}
+          {stores.map((s) => {
+            const checked = !isAll && selectedStores.includes(s.id);
+            return (
+              <button
+                key={s.id}
+                type="button"
+                onClick={() => toggleStore(s.id)}
+                className={`w-full px-3 py-2 text-left text-[12px] flex items-center gap-2 hover:bg-[var(--color-surface-hover)] transition-colors ${checked ? "text-[var(--color-text)] font-semibold" : "text-[var(--color-text-secondary)]"}`}
+              >
+                <span className={`w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 ${checked ? "bg-[var(--color-accent)] border-[var(--color-accent)]" : "border-[var(--color-border)]"}`}>
+                  {checked && <svg width="10" height="8" viewBox="0 0 10 8" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="1 4 4 7 9 1" /></svg>}
+                </span>
+                <span className="truncate">{s.name}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Component ──────────────────────────────────────────
 
 export default function SchedulesCalendarView() {
@@ -171,7 +266,15 @@ export default function SchedulesCalendarView() {
   const [weeklySortState, setWeeklySortState] = useState<SortState>("none");
   const [dailySortCol, setDailySortCol] = useState(-1);
   const [dailySortState, setDailySortState] = useState<SortState>("none");
-  const [selectedStore, setSelectedStore] = useState("");
+  // 멀티 스토어 선택: 빈 배열 = All (전체)
+  const [selectedStores, setSelectedStores] = useState<string[]>([]);
+  const isAllStores = selectedStores.length === 0;
+  const selectedStoreSet = useMemo(() => new Set(selectedStores), [selectedStores]);
+  const primaryStoreId = selectedStores[0] ?? "";
+  // 스케줄 필터 헬퍼: All이면 모든 store 통과, 아니면 선택된 store만
+  const matchesStoreFilter = (storeId: string) => isAllStores || selectedStoreSet.has(storeId);
+  // backward compat alias
+  const selectedStore = primaryStoreId;
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; blockId: string; status: string } | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [historyScheduleId, setHistoryScheduleId] = useState<string | undefined>(undefined);
@@ -185,7 +288,12 @@ export default function SchedulesCalendarView() {
   // ─── Data fetching ────────────────────────────────────
   const dateFrom = weekDates[0]?.date;
   const dateTo = weekDates[6]?.date;
-  const usersQ = useUsers();
+  // 스토어 선택 시 해당 스토어에 배정된(user_stores) 직원만 서버에서 필터링
+  const userFilters = useMemo(
+    () => (!isAllStores && selectedStores.length > 0 ? { store_ids: selectedStores } : undefined),
+    [isAllStores, selectedStores],
+  );
+  const usersQ = useUsers(userFilters);
   const storesQ = useStores();
   const orgQ = useOrganization();
   const orgDefaultRate = orgQ.data?.default_hourly_rate ?? null;
@@ -212,10 +320,15 @@ export default function SchedulesCalendarView() {
 
   // 첫 store 자동 선택 (URL store 파라미터가 있으면 우선)
   useEffect(() => {
-    if (selectedStore === "" && stores.length > 0) {
+    if (selectedStores.length === 0 && stores.length > 0) {
       const urlStore = searchParams.get("store");
-      const found = urlStore && stores.find((s) => s.id === urlStore);
-      setSelectedStore(found ? urlStore! : stores[0]!.id);
+      if (urlStore === "all" || !urlStore) {
+        // All mode — 빈 배열 유지
+      } else {
+        const ids = urlStore.split(",").filter((id) => stores.some((s) => s.id === id));
+        if (ids.length > 0) setSelectedStores(ids);
+        else setSelectedStores([stores[0]!.id]);
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stores]);
@@ -225,11 +338,9 @@ export default function SchedulesCalendarView() {
   // 트리거하면서 페이지 state를 흔들 수 있음 (특히 우리 effect가 URL을 다시 읽지 않더라도
   // searchParams의 새 reference로 다른 effect들이 재실행되면서 race가 생길 수 있음).
   useEffect(() => {
-    if (selectedStore === "") return; // 아직 초기화 안 됨
     if (typeof window === "undefined") return;
     const params = new URLSearchParams(window.location.search);
     params.set("view", view);
-    // weekly는 week만, daily는 day만 (서로 다른 의미라 동시에 두면 헷갈림)
     if (view === "weekly") {
       params.set("week", weekDates[0]?.date ?? "");
       params.delete("day");
@@ -237,13 +348,13 @@ export default function SchedulesCalendarView() {
       params.set("day", selectedDay);
       params.delete("week");
     }
-    params.set("store", selectedStore);
+    params.set("store", isAllStores ? "all" : selectedStores.join(","));
     const next = `${window.location.pathname}?${params.toString()}`;
     if (next !== window.location.pathname + window.location.search) {
       window.history.replaceState(null, "", next);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [view, weekStart, selectedDay, selectedStore]);
+  }, [view, weekStart, selectedDay, selectedStores, isAllStores]);
 
   // selectedDay가 현재 weekDates 밖으로 나가면 weekStart 자동 동기화
   useEffect(() => {
@@ -279,21 +390,85 @@ export default function SchedulesCalendarView() {
 
   // ─── Derived helpers ──────────────────────────────────
 
-  const currentStore = stores.find((s) => s.id === selectedStore);
+  const currentStore = stores.find((s) => s.id === primaryStoreId) ?? stores[0];
 
-  // operating_hours에서 open/close 시각 추출
-  const { openHour, closeHour } = useMemo(() => {
-    let oh = 9;
-    let ch = 22;
-    const oh_obj = currentStore?.operating_hours as Record<string, string> | null | undefined;
-    if (oh_obj && typeof oh_obj === "object") {
-      const openStr = oh_obj.open || oh_obj.start;
-      const closeStr = oh_obj.close || oh_obj.end;
-      if (openStr) oh = Math.floor(parseTimeToHours(openStr));
-      if (closeStr) ch = Math.ceil(parseTimeToHours(closeStr));
+  // schedule.range → 선택된 모든 store의 설정을 resolve해서 min start / max end
+  const resolveStoreIds = useMemo(
+    () => isAllStores ? stores.map((s) => s.id) : selectedStores,
+    [isAllStores, stores, selectedStores],
+  );
+  // 각 store별 schedule.range를 병렬 resolve
+  const rangeQueries = useQueries({
+    queries: resolveStoreIds.map((storeId) => ({
+      queryKey: ["settings", "resolve", "schedule.range", { store_id: storeId }],
+      queryFn: async () => {
+        const res = await api.get("/admin/settings/resolve", { params: { key: "schedule.range", store_id: storeId } });
+        return res.data as { key: string; value: unknown; source: string };
+      },
+      staleTime: 5 * 60 * 1000,
+    })),
+  });
+  // org 기본값 (store 없거나 아직 로딩 중일 때 fallback)
+  const orgRangeQ = useResolveSetting("schedule.range");
+
+  /** raw schedule.range 값에서 특정 요일(또는 전체)의 start/end 추출 */
+  const extractRange = useCallback((raw: unknown, dayKey?: string): { start: number; end: number } | null => {
+    if (!raw || typeof raw !== "object") return null;
+    const d = raw as Record<string, unknown>;
+    const mode = d.mode as string | undefined;
+    const allEntry = d.all as { start: string; end: string } | undefined;
+    const perDay = d.per_day as Record<string, { start: string; end: string }> | undefined;
+
+    if (mode === "per_day" && perDay) {
+      if (dayKey && perDay[dayKey]) {
+        return { start: parseTimeToHours(perDay[dayKey].start), end: parseTimeToHours(perDay[dayKey].end) };
+      }
+      const entries = Object.values(perDay).filter((v): v is { start: string; end: string } => typeof v === "object" && "start" in v);
+      if (entries.length > 0) {
+        return { start: Math.min(...entries.map((e) => parseTimeToHours(e.start))), end: Math.max(...entries.map((e) => parseTimeToHours(e.end))) };
+      }
     }
-    return { openHour: oh, closeHour: ch };
-  }, [currentStore]);
+    if (allEntry && typeof allEntry === "object" && "start" in allEntry) {
+      return { start: parseTimeToHours(allEntry.start), end: parseTimeToHours(allEntry.end) };
+    }
+    // 레거시 포맷
+    if (dayKey && dayKey in d) {
+      const entry = d[dayKey] as { start: string; end: string };
+      if (entry && "start" in entry) return { start: parseTimeToHours(entry.start), end: parseTimeToHours(entry.end) };
+    }
+    if ("all" in d && d.all && typeof d.all === "object" && "start" in (d.all as Record<string, unknown>)) {
+      const a = d.all as { start: string; end: string };
+      return { start: parseTimeToHours(a.start), end: parseTimeToHours(a.end) };
+    }
+    return null;
+  }, []);
+
+  const { openHour, closeHour } = useMemo(() => {
+    const DEFAULT_OH = 6;
+    const DEFAULT_CH = 23;
+    const DAY_KEYS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"] as const;
+    const dayKey = view === "daily" ? DAY_KEYS[new Date(selectedDay + "T00:00:00").getDay()] : undefined;
+
+    let globalOh = Infinity;
+    let globalCh = -Infinity;
+    let found = false;
+
+    for (const q of rangeQueries) {
+      const r = extractRange(q.data?.value, dayKey);
+      if (r) { globalOh = Math.min(globalOh, r.start); globalCh = Math.max(globalCh, r.end); found = true; }
+    }
+
+    // store별 결과 없으면 org 기본값 fallback
+    if (!found) {
+      const orgR = extractRange(orgRangeQ.data?.value, dayKey);
+      if (orgR) { globalOh = orgR.start; globalCh = orgR.end; found = true; }
+    }
+
+    return {
+      openHour: found ? Math.floor(globalOh) : DEFAULT_OH,
+      closeHour: found ? Math.ceil(globalCh) : DEFAULT_CH,
+    };
+  }, [rangeQueries, orgRangeQ.data, view, selectedDay, extractRange]);
 
   function getSchedulesForCell(userId: string, date: string): Schedule[] {
     // store 필터 제거 — 다른 매장 schedule도 같은 셀에 표시 (ScheduleBlock의 isOtherStore 분기로 dimmed).
@@ -308,6 +483,7 @@ export default function SchedulesCalendarView() {
 
   const filteredUsers = useMemo(() => {
     let result = users;
+    // 스토어 필터링은 useUsers(store_id)에서 서버사이드로 처리됨
     if (filters.staffIds.length > 0) {
       result = result.filter((u) => filters.staffIds.includes(u.id));
     }
@@ -321,6 +497,7 @@ export default function SchedulesCalendarView() {
       });
     }
     return result;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [users, filters, schedules]);
 
   const sortCol = view === "weekly" ? weeklySortCol : dailySortCol;
@@ -337,15 +514,15 @@ export default function SchedulesCalendarView() {
       if (view === "weekly") {
         const date = weekDates[sortCol]?.date;
         if (date) {
-          const aBlocks = schedules.filter((s) => s.user_id === a.id && s.work_date === date && s.store_id === selectedStore);
-          const bBlocks = schedules.filter((s) => s.user_id === b.id && s.work_date === date && s.store_id === selectedStore);
+          const aBlocks = schedules.filter((s) => s.user_id === a.id && s.work_date === date && matchesStoreFilter(s.store_id));
+          const bBlocks = schedules.filter((s) => s.user_id === b.id && s.work_date === date && matchesStoreFilter(s.store_id));
           aStatus = aBlocks.find((s) => s.status === "confirmed") ? "confirmed" : aBlocks.find((s) => s.status === "requested") ? "requested" : aBlocks.length > 0 ? "draft" : "none";
           bStatus = bBlocks.find((s) => s.status === "confirmed") ? "confirmed" : bBlocks.find((s) => s.status === "requested") ? "requested" : bBlocks.length > 0 ? "draft" : "none";
         }
       } else {
         const hour = openHour + sortCol;
-        const aBlocks = schedules.filter((s) => s.user_id === a.id && s.work_date === selectedDay && s.store_id === selectedStore && Math.floor(parseTimeToHours(s.start_time)) <= hour && Math.ceil(parseTimeToHours(s.end_time)) > hour);
-        const bBlocks = schedules.filter((s) => s.user_id === b.id && s.work_date === selectedDay && s.store_id === selectedStore && Math.floor(parseTimeToHours(s.start_time)) <= hour && Math.ceil(parseTimeToHours(s.end_time)) > hour);
+        const aBlocks = schedules.filter((s) => s.user_id === a.id && s.work_date === selectedDay && matchesStoreFilter(s.store_id) && Math.floor(parseTimeToHours(s.start_time)) <= hour && Math.ceil(parseTimeToHours(s.end_time)) > hour);
+        const bBlocks = schedules.filter((s) => s.user_id === b.id && s.work_date === selectedDay && matchesStoreFilter(s.store_id) && Math.floor(parseTimeToHours(s.start_time)) <= hour && Math.ceil(parseTimeToHours(s.end_time)) > hour);
         aStatus = aBlocks.find((s) => s.status === "confirmed") ? "confirmed" : aBlocks.find((s) => s.status === "requested") ? "requested" : aBlocks.length > 0 ? "draft" : "none";
         bStatus = bBlocks.find((s) => s.status === "confirmed") ? "confirmed" : bBlocks.find((s) => s.status === "requested") ? "requested" : bBlocks.length > 0 ? "draft" : "none";
       }
@@ -359,12 +536,13 @@ export default function SchedulesCalendarView() {
         : { requested: 0, confirmed: 1, draft: 2, none: 3 };
       return (order[aStatus as keyof typeof order] ?? 3) - (order[bStatus as keyof typeof order] ?? 3);
     });
-  }, [sortCol, sortState, view, selectedStore, selectedDay, filteredUsers, schedules, weekDates, openHour]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sortCol, sortState, view, selectedStores, isAllStores, selectedDay, filteredUsers, schedules, weekDates, openHour]);
 
   // ─── Columns + totals ─────────────────────────────────
 
   const weeklyColumns = useMemo(() => weekDates.map((day) => {
-    const daySchedules = schedules.filter((s) => s.work_date === day.date && s.store_id === selectedStore);
+    const daySchedules = schedules.filter((s) => s.work_date === day.date && matchesStoreFilter(s.store_id));
     const confirmed = daySchedules.filter((s) => s.status === "confirmed");
     const pending = daySchedules.filter((s) => s.status === "requested");
     const sumHours = (arr: Schedule[]) => arr.reduce((sum, s) => sum + getNetWorkHours(s), 0);
@@ -383,16 +561,19 @@ export default function SchedulesCalendarView() {
       costConfirmed: sumCost(confirmed),
       costPending: sumCost(pending),
     };
-  }), [weekDates, schedules, selectedStore, users]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), [weekDates, schedules, selectedStores, isAllStores, users]);
 
   const dailyHourRange = useMemo(() => {
     const out: number[] = [];
-    for (let h = openHour; h < closeHour; h++) out.push(h);
+    // overnight: closeHour <= openHour → closeHour + 24 (e.g., 6AM–2AM = 6..26)
+    const effectiveClose = closeHour <= openHour ? closeHour + 24 : closeHour;
+    for (let h = openHour; h < effectiveClose; h++) out.push(h);
     return out;
   }, [openHour, closeHour]);
 
   const dailyColumns = useMemo(() => dailyHourRange.map((h) => {
-    const daySchedules = schedules.filter((s) => s.work_date === selectedDay && s.store_id === selectedStore && Math.floor(parseTimeToHours(s.start_time)) <= h && Math.ceil(parseTimeToHours(s.end_time)) > h);
+    const daySchedules = schedules.filter((s) => s.work_date === selectedDay && matchesStoreFilter(s.store_id) && Math.floor(parseTimeToHours(s.start_time)) <= h && Math.ceil(parseTimeToHours(s.end_time)) > h);
     const confirmed = daySchedules.filter((s) => s.status === "confirmed");
     const pending = daySchedules.filter((s) => s.status === "requested");
     // 시간당 1시간 컬럼 — stored only
@@ -408,11 +589,12 @@ export default function SchedulesCalendarView() {
       costConfirmed: sumCost(confirmed),
       costPending: sumCost(pending),
     };
-  }), [dailyHourRange, schedules, selectedStore, selectedDay, users]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), [dailyHourRange, schedules, selectedStores, isAllStores, selectedDay, users]);
 
   const weeklyTotals = useMemo(() => {
-    const conf = schedules.filter((s) => weekDates.some((d) => d.date === s.work_date) && s.store_id === selectedStore && s.status === "confirmed");
-    const pend = schedules.filter((s) => weekDates.some((d) => d.date === s.work_date) && s.store_id === selectedStore && s.status === "requested");
+    const conf = schedules.filter((s) => weekDates.some((d) => d.date === s.work_date) && matchesStoreFilter(s.store_id) && s.status === "confirmed");
+    const pend = schedules.filter((s) => weekDates.some((d) => d.date === s.work_date) && matchesStoreFilter(s.store_id) && s.status === "requested");
     return {
       hc: weeklyColumns.reduce((a, c) => a + c.hoursConfirmed, 0),
       hp: weeklyColumns.reduce((a, c) => a + c.hoursPending, 0),
@@ -421,10 +603,11 @@ export default function SchedulesCalendarView() {
       tc: new Set(conf.map((s) => s.user_id)).size,
       tp: new Set(pend.map((s) => s.user_id)).size,
     };
-  }, [weeklyColumns, schedules, weekDates, selectedStore]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [weeklyColumns, schedules, weekDates, selectedStores, isAllStores]);
 
   const dailyTotals = useMemo(() => {
-    const dayBlocks = schedules.filter((s) => s.work_date === selectedDay && s.store_id === selectedStore);
+    const dayBlocks = schedules.filter((s) => s.work_date === selectedDay && matchesStoreFilter(s.store_id));
     const conf = dayBlocks.filter((s) => s.status === "confirmed");
     const pend = dayBlocks.filter((s) => s.status === "requested");
     const sumHours = (arr: Schedule[]) => arr.reduce((s, b) => s + getNetWorkHours(b), 0);
@@ -437,7 +620,8 @@ export default function SchedulesCalendarView() {
       tc: new Set(conf.map((s) => s.user_id)).size,
       tp: new Set(pend.map((s) => s.user_id)).size,
     };
-  }, [schedules, selectedDay, selectedStore, users]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [schedules, selectedDay, selectedStores, isAllStores, users]);
 
   const totals = view === "weekly" ? weeklyTotals : dailyTotals;
   const columns = view === "weekly" ? weeklyColumns : dailyColumns;
@@ -484,6 +668,11 @@ export default function SchedulesCalendarView() {
     }
     if (action === "details") router.push(`/schedules/${blockId}`);
     if (action === "edit") setEditModal({ open: true, mode: "edit", blockId });
+    if (action === "add") {
+      // 해당 스케줄의 직원과 날짜로 새 스케줄 추가 모달 열기
+      const block = schedules.find((s) => s.id === blockId);
+      if (block) setEditModal({ open: true, mode: "add", staffId: block.user_id, date: block.work_date });
+    }
     if (action === "revert") setConfirmDialog({ open: true, type: "revert", blockId });
     if (action === "delete") setConfirmDialog({ open: true, type: "delete", blockId });
     if (action === "reject") setConfirmDialog({ open: true, type: "reject", blockId });
@@ -515,7 +704,7 @@ export default function SchedulesCalendarView() {
     if (editModal.mode === "add") {
       createMutation.mutate({
         user_id: payload.userId,
-        store_id: selectedStore,
+        store_id: payload.storeId,
         work_role_id: payload.workRoleId,
         work_date: payload.date,
         start_time: payload.startTime,
@@ -560,32 +749,32 @@ export default function SchedulesCalendarView() {
       Math.floor(parseTimeToHours(s.start_time)) <= hour &&
       Math.ceil(parseTimeToHours(s.end_time)) > hour,
     );
-    return matches.find((s) => s.store_id === selectedStore) ?? matches[0];
+    return matches.find((s) => matchesStoreFilter(s.store_id)) ?? matches[0];
   }
 
   // ─── Stats helpers per user ───────────────────────────
 
   function getUserConfirmedHours(userId: string, date: string): number {
     return schedules
-      .filter((s) => s.user_id === userId && s.work_date === date && s.store_id === selectedStore && s.status === "confirmed")
+      .filter((s) => s.user_id === userId && s.work_date === date && matchesStoreFilter(s.store_id) && s.status === "confirmed")
       .reduce((sum, s) => sum + getNetWorkHours(s), 0);
   }
 
   function getUserPendingHours(userId: string, date: string): number {
     return schedules
-      .filter((s) => s.user_id === userId && s.work_date === date && s.store_id === selectedStore && s.status === "requested")
+      .filter((s) => s.user_id === userId && s.work_date === date && matchesStoreFilter(s.store_id) && s.status === "requested")
       .reduce((sum, s) => sum + getNetWorkHours(s), 0);
   }
 
   // stored rate만 사용 — NULL은 No cost로 계산에서 빠짐
   function getUserConfirmedCost(userId: string, date: string): number {
     return schedules
-      .filter((s) => s.user_id === userId && s.work_date === date && s.store_id === selectedStore && s.status === "confirmed")
+      .filter((s) => s.user_id === userId && s.work_date === date && matchesStoreFilter(s.store_id) && s.status === "confirmed")
       .reduce((sum, s) => sum + getNetWorkHours(s) * (s.hourly_rate ?? 0), 0);
   }
   function getUserPendingCost(userId: string, date: string): number {
     return schedules
-      .filter((s) => s.user_id === userId && s.work_date === date && s.store_id === selectedStore && s.status === "requested")
+      .filter((s) => s.user_id === userId && s.work_date === date && matchesStoreFilter(s.store_id) && s.status === "requested")
       .reduce((sum, s) => sum + getNetWorkHours(s) * (s.hourly_rate ?? 0), 0);
   }
   // user의 해당 주/일 스케줄 중 stored rate가 NULL인 게 있는지 — sync 필요 표시용
@@ -593,7 +782,7 @@ export default function SchedulesCalendarView() {
     return schedules.some(
       (s) =>
         s.user_id === userId &&
-        s.store_id === selectedStore &&
+        matchesStoreFilter(s.store_id) &&
         dates.includes(s.work_date) &&
         (s.status === "confirmed" || s.status === "requested") &&
         (s.hourly_rate == null || s.hourly_rate === 0),
@@ -685,6 +874,8 @@ export default function SchedulesCalendarView() {
             prefilledStartTime={editModal.startTime}
             users={users}
             storeId={selectedStore}
+            stores={stores}
+            selectedStoreIds={selectedStores}
             inheritedRate={editInheritedRate}
             showCost={isGMView}
             onClose={closeEditModal}
@@ -761,17 +952,18 @@ export default function SchedulesCalendarView() {
 
         {/* Row 2: Store(left) | View+Nav+Buttons(right) */}
         <div className="flex items-center justify-between py-2 gap-2 flex-wrap min-h-[48px]">
-          {/* Left: Store */}
+          {/* Left: Store multi-select */}
           <div className="flex items-center gap-2 shrink-0">
-            <select
-              value={selectedStore}
-              onChange={(e) => setSelectedStore(e.target.value)}
-              className="px-3 py-1.5 bg-[var(--color-surface)] border-2 border-[var(--color-accent)] rounded-lg text-[13px] font-semibold text-[var(--color-accent)] cursor-pointer max-w-[180px] truncate"
-            >
-              {stores.length === 0 && <option value="">Loading…</option>}
-              {stores.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-            </select>
-            <span className="text-[12px] text-[var(--color-text-muted)] hidden sm:inline">{storeHoursLabel}</span>
+            <StoreMultiSelect
+              stores={stores}
+              selectedStores={selectedStores}
+              onChange={setSelectedStores}
+            />
+            {!isAllStores && selectedStores.length > 0 && (
+              <span className="text-[12px] text-[var(--color-text-secondary)] hidden sm:inline truncate max-w-[300px]">
+                {selectedStores.map((id) => stores.find((s) => s.id === id)?.name).filter(Boolean).join(", ")}
+              </span>
+            )}
           </div>
           {/* Right: View toggle + Nav + Buttons */}
           <div className="flex items-center gap-2 sm:gap-3">
@@ -852,7 +1044,7 @@ export default function SchedulesCalendarView() {
         />
 
         {/* Table Grid */}
-        <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl overflow-x-auto">
+        <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl overflow-auto" style={{ maxHeight: "calc(100vh - 260px)" }}>
           <div style={{ minWidth: view === "weekly" ? 900 : 1100 }}>
             <table className="w-full border-collapse" style={{ tableLayout: "fixed" }}>
               <colgroup>
@@ -884,8 +1076,8 @@ export default function SchedulesCalendarView() {
                   const userEffective = effectiveRate(u, currentStore, orgDefaultRate);
                   const isUserCustom = u.hourly_rate != null;
                 return (
-                  <tr key={u.id} className="border-b border-[var(--color-border)] last:border-b-0 hover:bg-[var(--color-surface-hover)] transition-[background-color] duration-100">
-                    <td className="px-4 py-3 border-r-2 border-[var(--color-border)]">
+                  <tr key={u.id} className="border-b border-[var(--color-border)] last:border-b-0 hover:bg-[var(--color-surface-hover)] transition-[background-color] duration-100 relative z-[1]">
+                    <td className="px-4 py-3 border-r-2 border-[var(--color-border)] sticky left-0 z-[5] bg-[var(--color-surface)]">
                       <div className="flex items-center gap-3">
                         <div className={`w-8 h-8 rounded-full flex items-center justify-center text-[11px] font-bold shrink-0 ${rolePriorityToColor(u.role_priority)}`}>{getInitials(u.full_name)}</div>
                         <div className="min-w-0">
@@ -913,10 +1105,19 @@ export default function SchedulesCalendarView() {
                                       schedule={s}
                                       showCost={isGMView}
                                       attendance={getAttendanceFor(s.id)}
-                                      currentStoreId={selectedStore}
+                                      currentStoreId={isAllStores || selectedStores.length > 1 ? "__all__" : primaryStoreId}
                                       onClick={(e) => handleBlockClick(e, s)}
                                     />
                                   ))}
+                                  {/* 같은 날 추가 버튼 */}
+                                  <button
+                                    type="button"
+                                    onClick={() => openAddModal(u.id, day.date)}
+                                    className="w-full py-0.5 rounded border border-dashed border-[var(--color-border)] text-[var(--color-text-muted)] hover:border-[var(--color-accent)] hover:text-[var(--color-accent)] transition-colors text-[12px] opacity-0 hover:opacity-100 focus:opacity-100"
+                                    title="Add another schedule"
+                                  >
+                                    +
+                                  </button>
                                 </div>
                               ) : (
                                 <div
@@ -1003,7 +1204,7 @@ export default function SchedulesCalendarView() {
                                       schedule={seg.sched}
                                       showCost={isGMView}
                                       attendance={getAttendanceFor(seg.sched.id)}
-                                      currentStoreId={selectedStore}
+                                      currentStoreId={isAllStores || selectedStores.length > 1 ? "__all__" : primaryStoreId}
                                       onClick={(e) => handleBlockClick(e, seg.sched)}
                                     />
                                   </div>
@@ -1033,7 +1234,7 @@ export default function SchedulesCalendarView() {
                         })()
                       ) : (
                         (() => {
-                          const blocks = schedules.filter((b) => b.work_date === selectedDay && b.user_id === u.id && b.store_id === selectedStore);
+                          const blocks = schedules.filter((b) => b.work_date === selectedDay && b.user_id === u.id && matchesStoreFilter(b.store_id));
                           const h = blocks.filter((b) => b.status === "confirmed").reduce((sum, b) => sum + getNetWorkHours(b), 0);
                           const ph = blocks.filter((b) => b.status === "requested").reduce((sum, b) => sum + getNetWorkHours(b), 0);
                           return <div className="flex flex-col items-center">

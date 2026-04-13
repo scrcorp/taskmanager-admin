@@ -46,6 +46,7 @@ export function ContextMenu({ x, y, status, userRole = 'gm', canSyncRate = false
     items = [
       { id: 'details', label: 'View Details' },
       { id: 'edit', label: 'Edit Schedule' },
+      { id: 'add', label: 'Add Schedule' },
       ...(syncItem ? [syncItem] : []),
       { id: 'divider', label: '' },
       { id: 'delete', label: 'Delete', danger: true },
@@ -54,6 +55,7 @@ export function ContextMenu({ x, y, status, userRole = 'gm', canSyncRate = false
     items = [
       { id: 'details', label: 'View Details' },
       { id: 'edit', label: 'Edit Schedule' },
+      { id: 'add', label: 'Add Schedule' },
       { id: 'confirm', label: 'Confirm' },
       ...(syncItem ? [syncItem] : []),
       { id: 'reject', label: 'Reject...', danger: true },
@@ -67,6 +69,7 @@ export function ContextMenu({ x, y, status, userRole = 'gm', canSyncRate = false
       ? [
           { id: 'details', label: 'View Details' },
           { id: 'edit', label: 'Edit Schedule' },
+          { id: 'add', label: 'Add Schedule' },
           ...(syncItem ? [syncItem] : []),
           { id: 'revert', label: 'Revert to Requested' },
           { id: 'swap', label: 'Swap with...' },
@@ -77,17 +80,20 @@ export function ContextMenu({ x, y, status, userRole = 'gm', canSyncRate = false
         ]
       : [
           { id: 'details', label: 'View Details' },
+          { id: 'add', label: 'Add Schedule' },
           { id: 'history', label: 'View History' },
         ]
   } else if (status === 'rejected' || status === 'cancelled') {
     items = [
       { id: 'details', label: 'View Details' },
+      { id: 'add', label: 'Add Schedule' },
       { id: 'history', label: 'View History' },
     ]
   } else {
     items = [
       { id: 'details', label: 'View Details' },
       { id: 'edit', label: 'Edit Schedule' },
+      { id: 'add', label: 'Add Schedule' },
       { id: 'divider', label: '' },
       { id: 'delete', label: 'Delete', danger: true },
     ]
