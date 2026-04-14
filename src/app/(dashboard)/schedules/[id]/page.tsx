@@ -1,188 +1,203 @@
 "use client";
 
 /**
- * 스케줄 상세 페이지 -- 스케줄 정보를 표시합니다.
- * 체크리스트 리뷰는 /checklists/progress 에서 진행.
- *
- * Schedule detail page showing schedule info.
- * Checklist review moved to /checklists/progress.
+ * 스케줄 상세 페이지 — server API fetch + inline ScheduleEditModal.
+ * Edit 클릭 시 같은 페이지에서 modal을 띄우므로 overview로 튕기지 않음.
  */
 
-import React, { useState, useCallback } from "react";
+import { useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ChevronLeft, Trash2, Clock, Calendar, MapPin, User, Briefcase } from "lucide-react";
-import { useSchedule, useDeleteSchedule } from "@/hooks/useSchedules";
-import { Button, Card, Badge, LoadingSpinner, EmptyState, ConfirmDialog } from "@/components/ui";
-import { useToast } from "@/components/ui/Toast";
-import { formatFixedDate, parseApiError } from "@/lib/utils";
+import { ScheduleDetailPage } from "@/components/schedules/redesign/ScheduleDetailPage";
+import { ScheduleEditModal, type ScheduleEditPayload } from "@/components/schedules/redesign/ScheduleEditModal";
+import {
+  useSchedule, useDeleteSchedule, useRevertSchedule, useCancelSchedule, useConfirmSchedule,
+  useScheduleAuditLog, useSchedules, useUpdateSchedule, useDeleteScheduleHistoryEntry,
+} from "@/hooks/useSchedules";
+import { useUser, useUsers } from "@/hooks/useUsers";
+import { useStore } from "@/hooks/useStores";
+import { useOrganization } from "@/hooks/useOrganization";
+import { useAttendances } from "@/hooks/useAttendances";
+import { useAuthStore } from "@/stores/authStore";
 
-const statusBadgeVariant: Record<string, "default" | "success" | "danger"> = {
-  confirmed: "success",
-  cancelled: "danger",
-};
-const statusLabel: Record<string, string> = {
-  confirmed: "Confirmed",
-  cancelled: "Cancelled",
-};
-
-export default function ScheduleDetailPage(): React.ReactElement {
-  const params = useParams();
+export default function SchedulesDetailPage() {
+  const params = useParams<{ id: string }>();
   const router = useRouter();
-  const { toast } = useToast();
+  const id = params.id;
 
-  const scheduleId: string = params.id as string;
-  const { data: schedule, isLoading } = useSchedule(scheduleId);
-  const deleteSchedule = useDeleteSchedule();
+  // 로그인 사용자 role 기반 cost / action 권한
+  const currentUser = useAuthStore((s) => s.user);
+  const userPriority = currentUser?.role_priority ?? 99;
+  const showCost = userPriority <= 20;       // Owner/GM
+  const isGMPlus = userPriority <= 20;       // confirmed schedule modify/delete/revert/cancel/swap
+  const isOwner = userPriority <= 10;        // history entry 삭제
 
-  const [isDeleteOpen, setIsDeleteOpen] = useState(false);
+  const scheduleQ = useSchedule(id);
+  const userQ = useUser(scheduleQ.data?.user_id);
+  const storeQ = useStore(scheduleQ.data?.store_id);
+  const orgQ = useOrganization();
+  const auditLogQ = useScheduleAuditLog(id);
+  const usersQ = useUsers();
+  const attendancesQ = useAttendances({
+    user_id: scheduleQ.data?.user_id,
+    work_date: scheduleQ.data?.work_date,
+  });
 
-  const handleDelete = useCallback(() => {
-    deleteSchedule.mutate(scheduleId, {
-      onSuccess: () => {
-        toast({ type: "success", message: "스케줄이 삭제되었습니다." });
-        router.push("/schedules");
-      },
-      onError: (err) => {
-        toast({ type: "error", message: parseApiError(err, "스케줄 삭제에 실패했습니다.") });
-      },
+  // 같은 user의 같은 주차 스케줄 (related)
+  const weekRange = useMemo(() => {
+    if (!scheduleQ.data) return null;
+    const d = new Date(scheduleQ.data.work_date + "T00:00:00");
+    const sunday = new Date(d);
+    sunday.setDate(sunday.getDate() - sunday.getDay());
+    const saturday = new Date(sunday);
+    saturday.setDate(saturday.getDate() + 6);
+    return {
+      from: sunday.toISOString().slice(0, 10),
+      to: saturday.toISOString().slice(0, 10),
+    };
+  }, [scheduleQ.data]);
+
+  const relatedQ = useSchedules({
+    user_id: scheduleQ.data?.user_id,
+    date_from: weekRange?.from,
+    date_to: weekRange?.to,
+    per_page: 50,
+  });
+
+  const deleteMutation = useDeleteSchedule();
+  const revertMutation = useRevertSchedule();
+  const cancelMutation = useCancelSchedule();
+  const confirmMutation = useConfirmSchedule();
+  const updateMutation = useUpdateSchedule();
+  const deleteHistoryMutation = useDeleteScheduleHistoryEntry();
+
+  const [editOpen, setEditOpen] = useState(false);
+
+  if (scheduleQ.isLoading || userQ.isLoading) {
+    return <div className="py-8 text-center text-[var(--color-text-muted)]">Loading…</div>;
+  }
+  if (scheduleQ.error) {
+    return <div className="py-8 text-center text-[var(--color-danger)]">{scheduleQ.error.message}</div>;
+  }
+  if (!scheduleQ.data || !userQ.data) {
+    return <div className="py-8 text-center text-[var(--color-text-muted)]">Schedule not found</div>;
+  }
+
+  const schedule = scheduleQ.data;
+  const user = userQ.data;
+  const attendance = attendancesQ.data?.items.find((a) => a.schedule_id === schedule.id) ?? null;
+  const auditEvents = auditLogQ.data ?? [];
+  const relatedSchedules = (relatedQ.data?.items ?? []).filter((s) => s.id !== schedule.id);
+
+  const handleDelete = () => {
+    if (!window.confirm("Delete this schedule?")) return;
+    deleteMutation.mutate(id, { onSuccess: () => router.push("/schedules") });
+  };
+  const handleCancelConfirmed = () => {
+    const reason = window.prompt("Cancellation reason (optional):") ?? undefined;
+    cancelMutation.mutate({ id, cancellation_reason: reason }, {
+      onSuccess: () => scheduleQ.refetch(),
     });
-  }, [scheduleId, deleteSchedule, toast, router]);
-
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center py-20">
-        <LoadingSpinner size="lg" />
-      </div>
-    );
-  }
-
-  if (!schedule) {
-    return (
-      <div>
-        <Button variant="ghost" size="sm" onClick={() => router.back()}>
-          <ChevronLeft size={16} />
-          Back to Schedules
-        </Button>
-        <EmptyState message="Schedule not found." />
-      </div>
-    );
-  }
-
-  const formatTime = (t: string | null) => {
-    if (!t) return "-";
-    return t.slice(0, 5);
+  };
+  const handleRevert = () => {
+    if (!window.confirm("Revert this confirmed schedule to requested?")) return;
+    revertMutation.mutate(id, { onSuccess: () => scheduleQ.refetch() });
+  };
+  const handleConfirmAction = () => {
+    confirmMutation.mutate(id, { onSuccess: () => scheduleQ.refetch() });
   };
 
-  const timeRange = schedule.start_time || schedule.end_time
-    ? `${formatTime(schedule.start_time)} ~ ${formatTime(schedule.end_time)}`
-    : "-";
+  // Effective rate cascade: user → store → org
+  const orgDefaultRate = orgQ.data?.default_hourly_rate ?? null;
+  const currentEffectiveRate: number | null = (() => {
+    if (user.hourly_rate != null) return user.hourly_rate;
+    if (storeQ.data?.default_hourly_rate != null) return storeQ.data.default_hourly_rate;
+    if (orgDefaultRate != null) return orgDefaultRate;
+    return null;
+  })();
 
-  const breakRange = schedule.break_start_time || schedule.break_end_time
-    ? `${formatTime(schedule.break_start_time)} ~ ${formatTime(schedule.break_end_time)}`
-    : "-";
+  // Sync stored rate → current effective (GM+ only)
+  const canSyncRate = showCost && currentEffectiveRate != null && (currentUser?.role_priority ?? 99) <= 20;
+  const handleSyncRate = canSyncRate
+    ? () => {
+        if (currentEffectiveRate == null) return;
+        updateMutation.mutate(
+          { id, data: { hourly_rate: currentEffectiveRate } },
+          { onSuccess: () => scheduleQ.refetch() },
+        );
+      }
+    : undefined;
 
-  const workHours = schedule.net_work_minutes > 0
-    ? `${Math.floor(schedule.net_work_minutes / 60)}h ${schedule.net_work_minutes % 60}m`
-    : "-";
+  const handleEditSave = (payload: ScheduleEditPayload) => {
+    updateMutation.mutate(
+      {
+        id,
+        data: {
+          user_id: payload.userId,
+          work_role_id: payload.workRoleId,
+          work_date: payload.date,
+          start_time: payload.startTime,
+          end_time: payload.endTime,
+          break_start_time: payload.breakStartTime,
+          break_end_time: payload.breakEndTime,
+          note: payload.notes || null,
+          hourly_rate: payload.hourlyRate,
+        },
+      },
+      {
+        onSuccess: () => {
+          setEditOpen(false);
+          scheduleQ.refetch();
+        },
+      },
+    );
+  };
 
   return (
-    <div>
-      <Button variant="ghost" size="sm" className="mb-4" onClick={() => router.back()}>
-        <ChevronLeft size={16} />
-        Back to Schedules
-      </Button>
-
-      {/* Schedule Summary */}
-      <Card className="mb-6">
-        <div className="flex items-start justify-between mb-4">
-          <h1 className="text-xl font-bold text-text">Schedule Detail</h1>
-          <div className="flex items-center gap-2">
-            <Badge variant={statusBadgeVariant[schedule.status] ?? "default"}>
-              {statusLabel[schedule.status] ?? schedule.status}
-            </Badge>
-            {schedule.status !== "cancelled" && (
-              <Button variant="danger" size="sm" onClick={() => setIsDeleteOpen(true)}>
-                <Trash2 size={14} />
-                Delete
-              </Button>
-            )}
-          </div>
-        </div>
-
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-          <div className="flex items-start gap-2">
-            <User size={14} className="text-text-muted mt-0.5 shrink-0" />
-            <div>
-              <p className="text-xs text-text-muted mb-1">Worker</p>
-              <p className="text-sm font-medium text-text">{schedule.user_name ?? "-"}</p>
-            </div>
-          </div>
-          <div className="flex items-start gap-2">
-            <MapPin size={14} className="text-text-muted mt-0.5 shrink-0" />
-            <div>
-              <p className="text-xs text-text-muted mb-1">Store</p>
-              <p className="text-sm font-medium text-text">{schedule.store_name ?? "-"}</p>
-            </div>
-          </div>
-          <div className="flex items-start gap-2">
-            <Briefcase size={14} className="text-text-muted mt-0.5 shrink-0" />
-            <div>
-              <p className="text-xs text-text-muted mb-1">Work Role</p>
-              <p className="text-sm font-medium text-text">{schedule.work_role_name ?? "-"}</p>
-            </div>
-          </div>
-          <div className="flex items-start gap-2">
-            <Calendar size={14} className="text-text-muted mt-0.5 shrink-0" />
-            <div>
-              <p className="text-xs text-text-muted mb-1">Date</p>
-              <p className="text-sm font-medium text-text">{formatFixedDate(schedule.work_date)}</p>
-            </div>
-          </div>
-          <div className="flex items-start gap-2">
-            <Clock size={14} className="text-text-muted mt-0.5 shrink-0" />
-            <div>
-              <p className="text-xs text-text-muted mb-1">Work Time</p>
-              <p className="text-sm font-medium text-text">{timeRange}</p>
-            </div>
-          </div>
-          <div className="flex items-start gap-2">
-            <Clock size={14} className="text-text-muted mt-0.5 shrink-0" />
-            <div>
-              <p className="text-xs text-text-muted mb-1">Net Work</p>
-              <p className="text-sm font-medium text-text">{workHours}</p>
-            </div>
-          </div>
-        </div>
-
-        {/* Break time & note */}
-        {(breakRange !== "-" || schedule.note) && (
-          <div className="mt-4 pt-4 border-t border-border grid grid-cols-2 md:grid-cols-3 gap-4">
-            {breakRange !== "-" && (
-              <div>
-                <p className="text-xs text-text-muted mb-1">Break Time</p>
-                <p className="text-sm text-text">{breakRange}</p>
-              </div>
-            )}
-            {schedule.note && (
-              <div className="col-span-2">
-                <p className="text-xs text-text-muted mb-1">Note</p>
-                <p className="text-sm text-text">{schedule.note}</p>
-              </div>
-            )}
-          </div>
-        )}
-
-      </Card>
-
-      <ConfirmDialog
-        isOpen={isDeleteOpen}
-        onClose={() => setIsDeleteOpen(false)}
-        onConfirm={handleDelete}
-        title="Delete Schedule"
-        message="Are you sure you want to delete this schedule? This action cannot be undone."
-        confirmLabel="Delete"
-        isLoading={deleteSchedule.isPending}
+    <>
+      <ScheduleDetailPage
+        schedule={schedule}
+        user={user}
+        attendance={attendance}
+        auditEvents={auditEvents}
+        relatedSchedules={relatedSchedules}
+        showCost={showCost}
+        currentEffectiveRate={currentEffectiveRate}
+        onSyncRate={handleSyncRate}
+        isSyncingRate={updateMutation.isPending}
+        onBack={() => router.back()}
+        // Edit: confirmed면 GM+ only (서버 정책), draft/requested는 SV 이상 모두 가능
+        onEdit={schedule.status === "confirmed" ? (isGMPlus ? () => setEditOpen(true) : undefined) : () => setEditOpen(true)}
+        // Swap: GM+ only
+        onSwap={isGMPlus && schedule.status === "confirmed" ? () => router.push(`/schedules?swap=${id}`) : undefined}
+        // Confirm: requested 상태에서만 (SV 가능)
+        onConfirm={schedule.status === "requested" ? handleConfirmAction : undefined}
+        // Revert: GM+ only, confirmed → requested
+        onRevert={isGMPlus && schedule.status === "confirmed" ? handleRevert : undefined}
+        // Delete: confirmed cancel은 GM+, draft/requested delete는 SV 이상
+        onDelete={
+          schedule.status === "confirmed"
+            ? (isGMPlus ? handleCancelConfirmed : undefined)
+            : handleDelete
+        }
+        onDeleteHistoryEntry={isOwner ? (logId) => deleteHistoryMutation.mutate(logId, { onSuccess: () => auditLogQ.refetch() }) : undefined}
       />
-    </div>
+
+      <ScheduleEditModal
+        open={editOpen}
+        mode="edit"
+        schedule={schedule}
+        users={usersQ.data ?? []}
+        storeId={schedule.store_id}
+        inheritedRate={currentEffectiveRate}
+        showCost={showCost}
+        onClose={() => setEditOpen(false)}
+        onSave={handleEditSave}
+        isSaving={updateMutation.isPending}
+        onDelete={() => {
+          setEditOpen(false);
+          handleDelete();
+        }}
+      />
+    </>
   );
 }

@@ -145,7 +145,10 @@ export interface User {
   phone: string | null;
   role_name: string;
   role_priority: number;
+  /** 개인 시급 raw — null이면 상속 (DB에 설정된 값 그대로) */
   hourly_rate: number | null;
+  /** effective 시급 — user.hourly_rate ?? organization.default_hourly_rate. 서버에서 계산. */
+  effective_hourly_rate?: number | null;
   is_active: boolean;
   created_at: string;
 }
@@ -527,6 +530,7 @@ export interface Attendance {
   store_name: string | null;
   user_id: string;
   user_name: string | null;
+  schedule_id: string | null;
   work_date: string;
   clock_in: string | null;
   clock_in_timezone: string | null;
@@ -534,9 +538,11 @@ export interface Attendance {
   break_end: string | null;
   clock_out: string | null;
   clock_out_timezone: string | null;
-  status: "clocked_in" | "on_break" | "clocked_out";
+  status: "not_yet" | "working" | "on_break" | "late" | "clocked_out" | "no_show";
+  anomalies: string[] | null;
   total_work_minutes: number | null;
   total_break_minutes: number | null;
+  net_work_minutes: number | null;
   note: string | null;
   created_at: string;
   corrections?: AttendanceCorrection[];
@@ -935,6 +941,9 @@ export interface Schedule {
   store_name: string | null;
   work_role_id: string | null;
   work_role_name: string | null;
+  /** Snapshot — preserved at creation time, immune to later renames */
+  work_role_name_snapshot: string | null;
+  position_snapshot: string | null;
   work_date: string;
   start_time: string | null;
   end_time: string | null;
@@ -943,12 +952,18 @@ export interface Schedule {
   net_work_minutes: number;
   /** Effective hourly rate for labor cost calculation (org → store → user → schedule override cascade) */
   hourly_rate: number;
-  status: "requested" | "confirmed" | "rejected" | "cancelled";
+  status: "draft" | "requested" | "confirmed" | "rejected" | "cancelled" | "deleted";
   submitted_at: string | null;
   is_modified: boolean;
+  rejected_by: string | null;
+  rejected_at: string | null;
   rejection_reason: string | null;
+  cancelled_by: string | null;
+  cancelled_at: string | null;
+  cancellation_reason: string | null;
   created_by: string | null;
   approved_by: string | null;
+  confirmed_at: string | null;
   note: string | null;
   created_at: string;
   updated_at: string;
@@ -967,6 +982,8 @@ export interface ScheduleCreate {
   /** Override the auto-calculated hourly rate. Omit to use org/store/user cascade. */
   hourly_rate?: number | null;
   note?: string | null;
+  /** Initial status. Default 'confirmed' for direct admin creation. */
+  status?: "draft" | "requested" | "confirmed";
   force?: boolean;
 }
 

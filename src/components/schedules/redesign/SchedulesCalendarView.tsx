@@ -1,0 +1,1258 @@
+"use client";
+
+/**
+ * SchedulesCalendarView — server types 직접 사용. mockup adapter 폐지.
+ *
+ * 데이터: useSchedules / useUsers / useStores 를 직접 사용.
+ * 모든 schedule 처리는 server `Schedule` 형태(start_time/end_time string, user_id/store_id)로.
+ */
+
+import { useState, useMemo, useEffect, useRef, useCallback } from "react";
+import { useQueries } from "@tanstack/react-query";
+import api from "@/lib/api";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useSchedules, useConfirmSchedule, useRejectSchedule, useDeleteSchedule, useSubmitSchedule, useRevertSchedule, useCancelSchedule, useCreateSchedule, useUpdateSchedule, useSwapSchedule } from "@/hooks/useSchedules";
+import { useUsers } from "@/hooks/useUsers";
+import { useStores } from "@/hooks/useStores";
+import { useOrganization } from "@/hooks/useOrganization";
+import { useAttendances } from "@/hooks/useAttendances";
+import { useResolveSetting } from "@/hooks/useSettings";
+import { useAuthStore } from "@/stores/authStore";
+import type { Schedule, Store, User } from "@/types";
+import { ScheduleBlock } from "./ScheduleBlock";
+import { StatsHeader } from "./StatsHeader";
+import { ContextMenu } from "./ContextMenu";
+import { HistoryPanel } from "./HistoryPanel";
+import { SwapModal } from "./SwapModal";
+import { ScheduleEditModal, type ScheduleEditPayload } from "./ScheduleEditModal";
+import { ConfirmDialog } from "./ConfirmDialog";
+import { FilterBar, type FilterState } from "./FilterBar";
+import { LegendModal } from "./LegendModal";
+
+type ViewMode = "weekly" | "daily";
+type SortState = "none" | "confirmed" | "requested";
+
+// ─── Date utilities ──────────────────────────────────────
+
+function getWeekStart(d: Date): Date {
+  const r = new Date(d);
+  r.setHours(0, 0, 0, 0);
+  r.setDate(r.getDate() - r.getDay());
+  return r;
+}
+
+/** Date → "YYYY-MM-DD" using LOCAL timezone (toISOString은 UTC라 KST에서 하루 어긋남) */
+function fmtLocalDate(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+interface WeekDay {
+  date: string;       // YYYY-MM-DD
+  dayName: string;    // "Sun"
+  dayNum: string;     // "5"
+  isWeekend: boolean;
+  isSunday: boolean;
+}
+
+function buildWeekDates(weekStart: Date): WeekDay[] {
+  const out: WeekDay[] = [];
+  const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(weekStart);
+    d.setDate(d.getDate() + i);
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, "0");
+    const dd = String(d.getDate()).padStart(2, "0");
+    out.push({
+      date: `${yyyy}-${mm}-${dd}`,
+      dayName: dayNames[i]!,
+      dayNum: String(d.getDate()),
+      isWeekend: i === 0 || i === 6,
+      isSunday: i === 0,
+    });
+  }
+  return out;
+}
+
+function parseTimeToHours(t: string | null): number {
+  if (!t) return 0;
+  const [hh, mm] = t.split(":");
+  return (Number.parseInt(hh ?? "0", 10) || 0) + (Number.parseInt(mm ?? "0", 10) || 0) / 60;
+}
+
+/** 실제 근무시간 (break 제외). cost 계산에 사용. */
+function getNetWorkHours(s: Schedule): number {
+  const gross = Math.max(0, parseTimeToHours(s.end_time) - parseTimeToHours(s.start_time));
+  if (s.break_start_time && s.break_end_time) {
+    const breakHrs = Math.max(0, parseTimeToHours(s.break_end_time) - parseTimeToHours(s.break_start_time));
+    return Math.max(0, gross - breakHrs);
+  }
+  return gross;
+}
+
+/** hours 소수점 최대 2자리 반올림. 정수면 정수 표시. */
+function fmtH(h: number): string {
+  const r = Math.round(h * 100) / 100;
+  return r % 1 === 0 ? String(r) : r.toFixed(r * 10 % 1 === 0 ? 1 : 2);
+}
+
+function formatHourLabel(h: number): string {
+  if (h === 0) return "12A";
+  if (h < 12) return `${h}A`;
+  if (h === 12) return "12P";
+  return `${h - 12}P`;
+}
+
+function rolePriorityToBadge(p: number): string {
+  if (p <= 10) return "Owner";
+  if (p <= 20) return "GM";
+  if (p <= 30) return "SV";
+  return "Staff";
+}
+
+function rolePriorityToColor(p: number): string {
+  if (p <= 10) return "bg-[var(--color-accent-muted)] text-[var(--color-accent)]";
+  if (p <= 20) return "bg-[var(--color-accent-muted)] text-[var(--color-accent)]";
+  if (p <= 30) return "bg-[var(--color-warning-muted)] text-[var(--color-warning)]";
+  return "bg-[var(--color-success-muted)] text-[var(--color-success)]";
+}
+
+function getInitials(name: string | null | undefined): string {
+  if (!name) return "??";
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "??";
+  if (parts.length === 1) return parts[0]!.slice(0, 2).toUpperCase();
+  return ((parts[0]![0] ?? "") + (parts[parts.length - 1]![0] ?? "")).toUpperCase();
+}
+
+/**
+ * Effective hourly rate cascade: user → store → org
+ * 현재 context의 store 기준으로 계산 (staff sidebar에서 현재 선택된 매장).
+ */
+function effectiveRate(
+  user: User | undefined,
+  store: Store | undefined,
+  orgDefault: number | null | undefined,
+): number | null {
+  if (user?.hourly_rate != null) return user.hourly_rate;
+  if (store?.default_hourly_rate != null) return store.default_hourly_rate;
+  if (orgDefault != null) return orgDefault;
+  return null;
+}
+
+// ─── Store Multi-Select ─────────────────────────────────
+
+function StoreMultiSelect({ stores, selectedStores, onChange }: {
+  stores: Store[];
+  selectedStores: string[];
+  onChange: (ids: string[]) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const isAll = selectedStores.length === 0;
+
+  // 외부 클릭 시 닫기
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
+  function toggleStore(id: string) {
+    if (selectedStores.includes(id)) {
+      const next = selectedStores.filter((s) => s !== id);
+      onChange(next); // 빈 배열이면 All
+    } else {
+      onChange([...selectedStores, id]);
+    }
+  }
+
+  function selectAll() {
+    onChange([]);
+  }
+
+  const label = isAll
+    ? "All Stores"
+    : selectedStores.length === 1
+      ? (stores.find((s) => s.id === selectedStores[0])?.name ?? "Store")
+      : `${selectedStores.length} Stores`;
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        className="px-3 py-1.5 bg-[var(--color-surface)] border-2 border-[var(--color-accent)] rounded-lg text-[13px] font-semibold text-[var(--color-accent)] cursor-pointer max-w-[200px] truncate flex items-center gap-1.5"
+      >
+        <span className="truncate">{label}</span>
+        <svg width="10" height="6" viewBox="0 0 10 6" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" className={`shrink-0 transition-transform ${open ? "rotate-180" : ""}`}>
+          <polyline points="1 1 5 5 9 1" />
+        </svg>
+      </button>
+
+      {open && (
+        <div className="absolute top-full left-0 mt-1 z-50 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg shadow-lg min-w-[200px] max-h-[300px] overflow-y-auto py-1">
+          {/* All option */}
+          <button
+            type="button"
+            onClick={selectAll}
+            className={`w-full px-3 py-2 text-left text-[12px] font-semibold flex items-center gap-2 hover:bg-[var(--color-surface-hover)] transition-colors ${isAll ? "text-[var(--color-accent)]" : "text-[var(--color-text-secondary)]"}`}
+          >
+            <span className={`w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 ${isAll ? "bg-[var(--color-accent)] border-[var(--color-accent)]" : "border-[var(--color-border)]"}`}>
+              {isAll && <svg width="10" height="8" viewBox="0 0 10 8" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="1 4 4 7 9 1" /></svg>}
+            </span>
+            All Stores
+          </button>
+
+          <div className="border-t border-[var(--color-border)] my-1" />
+
+          {/* Store options */}
+          {stores.map((s) => {
+            const checked = !isAll && selectedStores.includes(s.id);
+            return (
+              <button
+                key={s.id}
+                type="button"
+                onClick={() => toggleStore(s.id)}
+                className={`w-full px-3 py-2 text-left text-[12px] flex items-center gap-2 hover:bg-[var(--color-surface-hover)] transition-colors ${checked ? "text-[var(--color-text)] font-semibold" : "text-[var(--color-text-secondary)]"}`}
+              >
+                <span className={`w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 ${checked ? "bg-[var(--color-accent)] border-[var(--color-accent)]" : "border-[var(--color-border)]"}`}>
+                  {checked && <svg width="10" height="8" viewBox="0 0 10 8" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="1 4 4 7 9 1" /></svg>}
+                </span>
+                <span className="truncate">{s.name}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Component ──────────────────────────────────────────
+
+export default function SchedulesCalendarView() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+
+  // URL 기반 state 초기화 — back nav 시 자동 복원
+  // ?view=weekly|daily&week=YYYY-MM-DD&day=YYYY-MM-DD&store=<id>
+  const initView: ViewMode = searchParams.get("view") === "daily" ? "daily" : "weekly";
+  const initWeekStart: Date = (() => {
+    const w = searchParams.get("week");
+    if (w) {
+      const d = new Date(w + "T00:00:00");
+      if (!Number.isNaN(d.getTime())) return getWeekStart(d);
+    }
+    return getWeekStart(new Date());
+  })();
+  const initSelectedDay: string = searchParams.get("day") ?? buildWeekDates(initWeekStart)[0]?.date ?? "";
+
+  const [view, setView] = useState<ViewMode>(initView);
+  const [weekStart, setWeekStart] = useState<Date>(initWeekStart);
+  const weekDates = useMemo(() => buildWeekDates(weekStart), [weekStart]);
+  const [selectedDay, setSelectedDay] = useState(initSelectedDay);
+  // 현재 로그인 사용자의 role 기반으로 cost/actions 표시 여부 결정
+  // Owner(10) / GM(20) 만 cost 정보 표시, SV(30) / Staff(40) 는 숨김
+  const currentUser = useAuthStore((s) => s.user);
+  const isGMView = (currentUser?.role_priority ?? 99) <= 20;
+  const [weeklySortCol, setWeeklySortCol] = useState(-1);
+  const [weeklySortState, setWeeklySortState] = useState<SortState>("none");
+  const [dailySortCol, setDailySortCol] = useState(-1);
+  const [dailySortState, setDailySortState] = useState<SortState>("none");
+  // 멀티 스토어 선택: 빈 배열 = All (전체)
+  const [selectedStores, setSelectedStores] = useState<string[]>([]);
+  const isAllStores = selectedStores.length === 0;
+  const selectedStoreSet = useMemo(() => new Set(selectedStores), [selectedStores]);
+  const primaryStoreId = selectedStores[0] ?? "";
+  // 스케줄 필터 헬퍼: All이면 모든 store 통과, 아니면 선택된 store만
+  const matchesStoreFilter = (storeId: string) => isAllStores || selectedStoreSet.has(storeId);
+  // backward compat alias
+  const selectedStore = primaryStoreId;
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; blockId: string; status: string } | null>(null);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [historyScheduleId, setHistoryScheduleId] = useState<string | undefined>(undefined);
+  const [swapOpen, setSwapOpen] = useState(false);
+  const [swapSourceId, setSwapSourceId] = useState<string | null>(null);
+  const [editModal, setEditModal] = useState<{ open: boolean; mode: "add" | "edit"; blockId?: string; staffId?: string; date?: string; startTime?: string }>({ open: false, mode: "add" });
+  const [confirmDialog, setConfirmDialog] = useState<{ open: boolean; type: "delete" | "revert" | "reject" | "cancel" | "confirm"; blockId?: string }>({ open: false, type: "delete" });
+  const [filters, setFilters] = useState<FilterState>({ staffIds: [], roles: [], statuses: [], positions: [], shifts: [] });
+  const [legendOpen, setLegendOpen] = useState(false);
+
+  // ─── Data fetching ────────────────────────────────────
+  const dateFrom = weekDates[0]?.date;
+  const dateTo = weekDates[6]?.date;
+  // 스토어 선택 시 해당 스토어에 배정된(user_stores) 직원만 서버에서 필터링
+  const userFilters = useMemo(
+    () => (!isAllStores && selectedStores.length > 0 ? { store_ids: selectedStores } : undefined),
+    [isAllStores, selectedStores],
+  );
+  const usersQ = useUsers(userFilters);
+  const storesQ = useStores();
+  const orgQ = useOrganization();
+  const orgDefaultRate = orgQ.data?.default_hourly_rate ?? null;
+  // 다른 매장 스케줄도 보이기 위해 store_id 필터 대신 user_ids로 fetch.
+  // 현재 보이는 user들의 모든 매장 스케줄을 가져온 뒤, ScheduleBlock의 isOtherStore 분기로 dimmed 표시.
+  const allUserIds = useMemo(() => (usersQ.data ?? []).map((u) => u.id), [usersQ.data]);
+  const schedulesQ = useSchedules({
+    user_ids: allUserIds,
+    date_from: dateFrom,
+    date_to: dateTo,
+    per_page: 500,
+  });
+  const attendancesQ = useAttendances({
+    store_id: selectedStore || undefined,
+    date_from: dateFrom,
+    date_to: dateTo,
+    per_page: 500,
+  });
+
+  const users = usersQ.data ?? [];
+  const stores = storesQ.data ?? [];
+  const schedules: Schedule[] = schedulesQ.data?.items ?? [];
+  const attendances = attendancesQ.data?.items ?? [];
+
+  // 첫 store 자동 선택 (URL store 파라미터가 있으면 우선)
+  useEffect(() => {
+    if (selectedStores.length === 0 && stores.length > 0) {
+      const urlStore = searchParams.get("store");
+      if (urlStore === "all" || !urlStore) {
+        // All mode — 빈 배열 유지
+      } else {
+        const ids = urlStore.split(",").filter((id) => stores.some((s) => s.id === id));
+        if (ids.length > 0) setSelectedStores(ids);
+        else setSelectedStores([stores[0]!.id]);
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stores]);
+
+  // view / weekStart / selectedDay / selectedStore 변경 시 URL sync.
+  // window.history.replaceState 직접 사용 — router.replace는 Next.js navigation을
+  // 트리거하면서 페이지 state를 흔들 수 있음 (특히 우리 effect가 URL을 다시 읽지 않더라도
+  // searchParams의 새 reference로 다른 effect들이 재실행되면서 race가 생길 수 있음).
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    params.set("view", view);
+    if (view === "weekly") {
+      params.set("week", weekDates[0]?.date ?? "");
+      params.delete("day");
+    } else {
+      params.set("day", selectedDay);
+      params.delete("week");
+    }
+    params.set("store", isAllStores ? "all" : selectedStores.join(","));
+    const next = `${window.location.pathname}?${params.toString()}`;
+    if (next !== window.location.pathname + window.location.search) {
+      window.history.replaceState(null, "", next);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view, weekStart, selectedDay, selectedStores, isAllStores]);
+
+  // selectedDay가 현재 weekDates 밖으로 나가면 weekStart 자동 동기화
+  useEffect(() => {
+    if (!selectedDay) return;
+    const inWeek = weekDates.some((d) => d.date === selectedDay);
+    if (!inWeek) {
+      const d = new Date(selectedDay + "T00:00:00");
+      setWeekStart(getWeekStart(d));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedDay]);
+
+  // ?edit=<id> 쿼리 → edit modal 열기 (detail page에서 진입 시)
+  useEffect(() => {
+    const editId = searchParams.get("edit");
+    if (editId && !editModal.open) {
+      setEditModal({ open: true, mode: "edit", blockId: editId });
+    }
+    // 쿼리는 modal 닫을 때 정리
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
+
+  // ─── Mutations ────────────────────────────────────────
+  const submitMutation = useSubmitSchedule();
+  const confirmMutation = useConfirmSchedule();
+  const rejectMutation = useRejectSchedule();
+  const revertMutation = useRevertSchedule();
+  const cancelMutation = useCancelSchedule();
+  const deleteMutation = useDeleteSchedule();
+  const createMutation = useCreateSchedule();
+  const updateMutation = useUpdateSchedule();
+  const swapMutation = useSwapSchedule();
+
+  // ─── Derived helpers ──────────────────────────────────
+
+  const currentStore = stores.find((s) => s.id === primaryStoreId) ?? stores[0];
+
+  // schedule.range → 선택된 모든 store의 설정을 resolve해서 min start / max end
+  const resolveStoreIds = useMemo(
+    () => isAllStores ? stores.map((s) => s.id) : selectedStores,
+    [isAllStores, stores, selectedStores],
+  );
+  // 각 store별 schedule.range를 병렬 resolve
+  const rangeQueries = useQueries({
+    queries: resolveStoreIds.map((storeId) => ({
+      queryKey: ["settings", "resolve", "schedule.range", { store_id: storeId }],
+      queryFn: async () => {
+        const res = await api.get("/admin/settings/resolve", { params: { key: "schedule.range", store_id: storeId } });
+        return res.data as { key: string; value: unknown; source: string };
+      },
+      staleTime: 5 * 60 * 1000,
+    })),
+  });
+  // org 기본값 (store 없거나 아직 로딩 중일 때 fallback)
+  const orgRangeQ = useResolveSetting("schedule.range");
+
+  /** raw schedule.range 값에서 특정 요일(또는 전체)의 start/end 추출 */
+  const extractRange = useCallback((raw: unknown, dayKey?: string): { start: number; end: number } | null => {
+    if (!raw || typeof raw !== "object") return null;
+    const d = raw as Record<string, unknown>;
+    const mode = d.mode as string | undefined;
+    const allEntry = d.all as { start: string; end: string } | undefined;
+    const perDay = d.per_day as Record<string, { start: string; end: string }> | undefined;
+
+    if (mode === "per_day" && perDay) {
+      if (dayKey && perDay[dayKey]) {
+        return { start: parseTimeToHours(perDay[dayKey].start), end: parseTimeToHours(perDay[dayKey].end) };
+      }
+      const entries = Object.values(perDay).filter((v): v is { start: string; end: string } => typeof v === "object" && "start" in v);
+      if (entries.length > 0) {
+        return { start: Math.min(...entries.map((e) => parseTimeToHours(e.start))), end: Math.max(...entries.map((e) => parseTimeToHours(e.end))) };
+      }
+    }
+    if (allEntry && typeof allEntry === "object" && "start" in allEntry) {
+      return { start: parseTimeToHours(allEntry.start), end: parseTimeToHours(allEntry.end) };
+    }
+    // 레거시 포맷
+    if (dayKey && dayKey in d) {
+      const entry = d[dayKey] as { start: string; end: string };
+      if (entry && "start" in entry) return { start: parseTimeToHours(entry.start), end: parseTimeToHours(entry.end) };
+    }
+    if ("all" in d && d.all && typeof d.all === "object" && "start" in (d.all as Record<string, unknown>)) {
+      const a = d.all as { start: string; end: string };
+      return { start: parseTimeToHours(a.start), end: parseTimeToHours(a.end) };
+    }
+    return null;
+  }, []);
+
+  const { openHour, closeHour } = useMemo(() => {
+    const DEFAULT_OH = 6;
+    const DEFAULT_CH = 23;
+    const DAY_KEYS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"] as const;
+    const dayKey = view === "daily" ? DAY_KEYS[new Date(selectedDay + "T00:00:00").getDay()] : undefined;
+
+    let globalOh = Infinity;
+    let globalCh = -Infinity;
+    let found = false;
+
+    for (const q of rangeQueries) {
+      const r = extractRange(q.data?.value, dayKey);
+      if (r) { globalOh = Math.min(globalOh, r.start); globalCh = Math.max(globalCh, r.end); found = true; }
+    }
+
+    // store별 결과 없으면 org 기본값 fallback
+    if (!found) {
+      const orgR = extractRange(orgRangeQ.data?.value, dayKey);
+      if (orgR) { globalOh = orgR.start; globalCh = orgR.end; found = true; }
+    }
+
+    return {
+      openHour: found ? Math.floor(globalOh) : DEFAULT_OH,
+      closeHour: found ? Math.ceil(globalCh) : DEFAULT_CH,
+    };
+  }, [rangeQueries, orgRangeQ.data, view, selectedDay, extractRange]);
+
+  function getSchedulesForCell(userId: string, date: string): Schedule[] {
+    // store 필터 제거 — 다른 매장 schedule도 같은 셀에 표시 (ScheduleBlock의 isOtherStore 분기로 dimmed).
+    return schedules.filter((s) => s.user_id === userId && s.work_date === date);
+  }
+
+  function getAttendanceFor(scheduleId: string) {
+    return attendances.find((a) => a.schedule_id === scheduleId);
+  }
+
+  // ─── Filter + sort ────────────────────────────────────
+
+  const filteredUsers = useMemo(() => {
+    let result = users;
+    // 스토어 필터링은 useUsers(store_id)에서 서버사이드로 처리됨
+    if (filters.staffIds.length > 0) {
+      result = result.filter((u) => filters.staffIds.includes(u.id));
+    }
+    if (filters.roles.length > 0) {
+      result = result.filter((u) => filters.roles.includes(rolePriorityToBadge(u.role_priority).toLowerCase()));
+    }
+    if (filters.statuses.length > 0) {
+      result = result.filter((u) => {
+        const userScheds = schedules.filter((s) => s.user_id === u.id);
+        return userScheds.some((s) => filters.statuses.includes(s.status));
+      });
+    }
+    return result;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [users, filters, schedules]);
+
+  const sortCol = view === "weekly" ? weeklySortCol : dailySortCol;
+  const sortState = view === "weekly" ? weeklySortState : dailySortState;
+
+  const sortedUsers = useMemo(() => {
+    const arr = [...filteredUsers];
+    if (sortCol < 0 || sortState === "none") return arr;
+
+    return arr.sort((a, b) => {
+      let aStatus = "none";
+      let bStatus = "none";
+
+      if (view === "weekly") {
+        const date = weekDates[sortCol]?.date;
+        if (date) {
+          const aBlocks = schedules.filter((s) => s.user_id === a.id && s.work_date === date && matchesStoreFilter(s.store_id));
+          const bBlocks = schedules.filter((s) => s.user_id === b.id && s.work_date === date && matchesStoreFilter(s.store_id));
+          aStatus = aBlocks.find((s) => s.status === "confirmed") ? "confirmed" : aBlocks.find((s) => s.status === "requested") ? "requested" : aBlocks.length > 0 ? "draft" : "none";
+          bStatus = bBlocks.find((s) => s.status === "confirmed") ? "confirmed" : bBlocks.find((s) => s.status === "requested") ? "requested" : bBlocks.length > 0 ? "draft" : "none";
+        }
+      } else {
+        const hour = openHour + sortCol;
+        const aBlocks = schedules.filter((s) => s.user_id === a.id && s.work_date === selectedDay && matchesStoreFilter(s.store_id) && Math.floor(parseTimeToHours(s.start_time)) <= hour && Math.ceil(parseTimeToHours(s.end_time)) > hour);
+        const bBlocks = schedules.filter((s) => s.user_id === b.id && s.work_date === selectedDay && matchesStoreFilter(s.store_id) && Math.floor(parseTimeToHours(s.start_time)) <= hour && Math.ceil(parseTimeToHours(s.end_time)) > hour);
+        aStatus = aBlocks.find((s) => s.status === "confirmed") ? "confirmed" : aBlocks.find((s) => s.status === "requested") ? "requested" : aBlocks.length > 0 ? "draft" : "none";
+        bStatus = bBlocks.find((s) => s.status === "confirmed") ? "confirmed" : bBlocks.find((s) => s.status === "requested") ? "requested" : bBlocks.length > 0 ? "draft" : "none";
+      }
+
+      const hasA = aStatus !== "none" ? 0 : 1;
+      const hasB = bStatus !== "none" ? 0 : 1;
+      if (hasA !== hasB) return hasA - hasB;
+
+      const order = sortState === "confirmed"
+        ? { confirmed: 0, requested: 1, draft: 2, none: 3 }
+        : { requested: 0, confirmed: 1, draft: 2, none: 3 };
+      return (order[aStatus as keyof typeof order] ?? 3) - (order[bStatus as keyof typeof order] ?? 3);
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sortCol, sortState, view, selectedStores, isAllStores, selectedDay, filteredUsers, schedules, weekDates, openHour]);
+
+  // ─── Columns + totals ─────────────────────────────────
+
+  const weeklyColumns = useMemo(() => weekDates.map((day) => {
+    const daySchedules = schedules.filter((s) => s.work_date === day.date && matchesStoreFilter(s.store_id));
+    const confirmed = daySchedules.filter((s) => s.status === "confirmed");
+    const pending = daySchedules.filter((s) => s.status === "requested");
+    const sumHours = (arr: Schedule[]) => arr.reduce((sum, s) => sum + getNetWorkHours(s), 0);
+    // stored rate만 합산. NULL은 0으로 (No cost로 표시되는 schedule들은 합계에서 빠짐).
+    const sumCost = (arr: Schedule[]) => arr.reduce((sum, s) => sum + getNetWorkHours(s) * (s.hourly_rate ?? 0), 0);
+    return {
+      key: day.date,
+      label: day.dayName,
+      sublabel: day.dayNum,
+      isSunday: day.isSunday,
+      isSaturday: day.isWeekend && !day.isSunday,
+      teamConfirmed: new Set(confirmed.map((s) => s.user_id)).size,
+      teamPending: new Set(pending.map((s) => s.user_id)).size,
+      hoursConfirmed: sumHours(confirmed),
+      hoursPending: sumHours(pending),
+      costConfirmed: sumCost(confirmed),
+      costPending: sumCost(pending),
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), [weekDates, schedules, selectedStores, isAllStores, users]);
+
+  const dailyHourRange = useMemo(() => {
+    const out: number[] = [];
+    // overnight: closeHour <= openHour → closeHour + 24 (e.g., 6AM–2AM = 6..26)
+    const effectiveClose = closeHour <= openHour ? closeHour + 24 : closeHour;
+    for (let h = openHour; h < effectiveClose; h++) out.push(h);
+    return out;
+  }, [openHour, closeHour]);
+
+  const dailyColumns = useMemo(() => dailyHourRange.map((h) => {
+    const daySchedules = schedules.filter((s) => s.work_date === selectedDay && matchesStoreFilter(s.store_id) && Math.floor(parseTimeToHours(s.start_time)) <= h && Math.ceil(parseTimeToHours(s.end_time)) > h);
+    const confirmed = daySchedules.filter((s) => s.status === "confirmed");
+    const pending = daySchedules.filter((s) => s.status === "requested");
+    // 시간당 1시간 컬럼 — stored only
+    const sumCost = (arr: Schedule[]) => arr.reduce((sum, s) => sum + (s.hourly_rate ?? 0), 0);
+    return {
+      key: `h${h}`,
+      hour: h,
+      label: formatHourLabel(h),
+      teamConfirmed: confirmed.length,
+      teamPending: pending.length,
+      hoursConfirmed: confirmed.length,
+      hoursPending: pending.length,
+      costConfirmed: sumCost(confirmed),
+      costPending: sumCost(pending),
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), [dailyHourRange, schedules, selectedStores, isAllStores, selectedDay, users]);
+
+  const weeklyTotals = useMemo(() => {
+    const conf = schedules.filter((s) => weekDates.some((d) => d.date === s.work_date) && matchesStoreFilter(s.store_id) && s.status === "confirmed");
+    const pend = schedules.filter((s) => weekDates.some((d) => d.date === s.work_date) && matchesStoreFilter(s.store_id) && s.status === "requested");
+    return {
+      hc: weeklyColumns.reduce((a, c) => a + c.hoursConfirmed, 0),
+      hp: weeklyColumns.reduce((a, c) => a + c.hoursPending, 0),
+      lc: weeklyColumns.reduce((a, c) => a + c.costConfirmed, 0),
+      lp: weeklyColumns.reduce((a, c) => a + c.costPending, 0),
+      tc: new Set(conf.map((s) => s.user_id)).size,
+      tp: new Set(pend.map((s) => s.user_id)).size,
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [weeklyColumns, schedules, weekDates, selectedStores, isAllStores]);
+
+  const dailyTotals = useMemo(() => {
+    const dayBlocks = schedules.filter((s) => s.work_date === selectedDay && matchesStoreFilter(s.store_id));
+    const conf = dayBlocks.filter((s) => s.status === "confirmed");
+    const pend = dayBlocks.filter((s) => s.status === "requested");
+    const sumHours = (arr: Schedule[]) => arr.reduce((s, b) => s + getNetWorkHours(b), 0);
+    const sumCost = (arr: Schedule[]) => arr.reduce((s, b) => s + getNetWorkHours(b) * (b.hourly_rate ?? 0), 0);
+    return {
+      hc: sumHours(conf),
+      hp: sumHours(pend),
+      lc: sumCost(conf),
+      lp: sumCost(pend),
+      tc: new Set(conf.map((s) => s.user_id)).size,
+      tp: new Set(pend.map((s) => s.user_id)).size,
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [schedules, selectedDay, selectedStores, isAllStores, users]);
+
+  const totals = view === "weekly" ? weeklyTotals : dailyTotals;
+  const columns = view === "weekly" ? weeklyColumns : dailyColumns;
+  // selectedDay 직접 파싱 — weekDates lookup은 selectedDay가 weekDates 밖이면 undefined가 됨
+  const selectedDayLabel = (() => {
+    if (!selectedDay) return "";
+    const d = new Date(selectedDay + "T00:00:00");
+    return d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+  })();
+
+  // ─── Handlers ─────────────────────────────────────────
+
+  function handleSort(colIndex: number, state: SortState) {
+    if (view === "weekly") {
+      setWeeklySortCol(state === "none" ? -1 : colIndex);
+      setWeeklySortState(state);
+    } else {
+      setDailySortCol(state === "none" ? -1 : colIndex);
+      setDailySortState(state);
+    }
+  }
+
+  function handleDayClick(dateKey: string) {
+    setSelectedDay(dateKey);
+    setView("daily");
+  }
+
+  function handleBlockClick(e: React.MouseEvent, sched: Schedule) {
+    e.preventDefault();
+    e.stopPropagation();
+    setContextMenu({ x: e.clientX, y: e.clientY, blockId: sched.id, status: sched.status });
+  }
+
+  function handleContextAction(action: string) {
+    if (!contextMenu) return;
+    const blockId = contextMenu.blockId;
+    if (action === "history") {
+      setHistoryScheduleId(blockId);
+      setHistoryOpen(true);
+    }
+    if (action === "swap") {
+      setSwapSourceId(blockId);
+      setSwapOpen(true);
+    }
+    if (action === "details") router.push(`/schedules/${blockId}`);
+    if (action === "edit") setEditModal({ open: true, mode: "edit", blockId });
+    if (action === "add") {
+      // 해당 스케줄의 직원과 날짜로 새 스케줄 추가 모달 열기
+      const block = schedules.find((s) => s.id === blockId);
+      if (block) setEditModal({ open: true, mode: "add", staffId: block.user_id, date: block.work_date });
+    }
+    if (action === "revert") setConfirmDialog({ open: true, type: "revert", blockId });
+    if (action === "delete") setConfirmDialog({ open: true, type: "delete", blockId });
+    if (action === "reject") setConfirmDialog({ open: true, type: "reject", blockId });
+    if (action === "cancel") setConfirmDialog({ open: true, type: "cancel", blockId });
+    if (action === "confirm") setConfirmDialog({ open: true, type: "confirm", blockId });
+    if (action === "sync-rate") {
+      const block = schedules.find((s) => s.id === blockId);
+      if (!block) return;
+      const blockUser = users.find((u) => u.id === block.user_id);
+      const target = effectiveRate(blockUser, currentStore, orgDefaultRate);
+      if (target == null) return;
+      updateMutation.mutate({ id: blockId, data: { hourly_rate: target } });
+    }
+  }
+
+  function openAddModal(staffId?: string, date?: string, startTime?: string) {
+    setEditModal({ open: true, mode: "add", staffId, date, startTime });
+  }
+
+  function closeEditModal() {
+    setEditModal({ open: false, mode: "add" });
+    // 쿼리 정리
+    if (searchParams.get("edit")) {
+      router.replace("/schedules", { scroll: false });
+    }
+  }
+
+  function handleScheduleEditSave(payload: ScheduleEditPayload) {
+    if (editModal.mode === "add") {
+      createMutation.mutate({
+        user_id: payload.userId,
+        store_id: payload.storeId,
+        work_role_id: payload.workRoleId,
+        work_date: payload.date,
+        start_time: payload.startTime,
+        end_time: payload.endTime,
+        break_start_time: payload.breakStartTime,
+        break_end_time: payload.breakEndTime,
+        // GM+: 바로 confirmed, SV: requested
+        status: isGMView ? "confirmed" : "requested",
+        note: payload.notes || null,
+        hourly_rate: payload.hourlyRate,
+      }, {
+        onSuccess: closeEditModal,
+      });
+    } else if (editModal.mode === "edit" && editModal.blockId) {
+      updateMutation.mutate({
+        id: editModal.blockId,
+        data: {
+          user_id: payload.userId,
+          work_role_id: payload.workRoleId,
+          work_date: payload.date,
+          start_time: payload.startTime,
+          end_time: payload.endTime,
+          break_start_time: payload.breakStartTime,
+          break_end_time: payload.breakEndTime,
+          note: payload.notes || null,
+          hourly_rate: payload.hourlyRate,
+        },
+      }, {
+        onSuccess: closeEditModal,
+      });
+    }
+  }
+
+  // ─── Daily view helper ────────────────────────────────
+
+  function getDailyScheduleAtHour(userId: string, hour: number): Schedule | undefined {
+    // 같은 시간대 겹치면 현재 매장 우선, 그 다음 다른 매장 (dimmed로 표시).
+    // floor(start) <= hour: 12:30 시작도 12시 칸에서 매칭
+    const matches = schedules.filter((s) =>
+      s.user_id === userId &&
+      s.work_date === selectedDay &&
+      Math.floor(parseTimeToHours(s.start_time)) <= hour &&
+      Math.ceil(parseTimeToHours(s.end_time)) > hour,
+    );
+    return matches.find((s) => matchesStoreFilter(s.store_id)) ?? matches[0];
+  }
+
+  // ─── Stats helpers per user ───────────────────────────
+
+  function getUserConfirmedHours(userId: string, date: string): number {
+    return schedules
+      .filter((s) => s.user_id === userId && s.work_date === date && matchesStoreFilter(s.store_id) && s.status === "confirmed")
+      .reduce((sum, s) => sum + getNetWorkHours(s), 0);
+  }
+
+  function getUserPendingHours(userId: string, date: string): number {
+    return schedules
+      .filter((s) => s.user_id === userId && s.work_date === date && matchesStoreFilter(s.store_id) && s.status === "requested")
+      .reduce((sum, s) => sum + getNetWorkHours(s), 0);
+  }
+
+  // stored rate만 사용 — NULL은 No cost로 계산에서 빠짐
+  function getUserConfirmedCost(userId: string, date: string): number {
+    return schedules
+      .filter((s) => s.user_id === userId && s.work_date === date && matchesStoreFilter(s.store_id) && s.status === "confirmed")
+      .reduce((sum, s) => sum + getNetWorkHours(s) * (s.hourly_rate ?? 0), 0);
+  }
+  function getUserPendingCost(userId: string, date: string): number {
+    return schedules
+      .filter((s) => s.user_id === userId && s.work_date === date && matchesStoreFilter(s.store_id) && s.status === "requested")
+      .reduce((sum, s) => sum + getNetWorkHours(s) * (s.hourly_rate ?? 0), 0);
+  }
+  // user의 해당 주/일 스케줄 중 stored rate가 NULL인 게 있는지 — sync 필요 표시용
+  function userHasNoCost(userId: string, dates: string[]): boolean {
+    return schedules.some(
+      (s) =>
+        s.user_id === userId &&
+        matchesStoreFilter(s.store_id) &&
+        dates.includes(s.work_date) &&
+        (s.status === "confirmed" || s.status === "requested") &&
+        (s.hourly_rate == null || s.hourly_rate === 0),
+    );
+  }
+
+  // ─── Store hours label ────────────────────────────────
+  const storeHoursLabel = `${openHour > 12 ? `${openHour - 12}PM` : `${openHour}AM`} - ${closeHour > 12 ? `${closeHour - 12}PM` : `${closeHour}AM`}`;
+
+  // ─── Render ───────────────────────────────────────────
+
+  return (
+    <div className="min-h-screen bg-[var(--color-bg)]">
+      {/* Context Menu */}
+      {contextMenu && (() => {
+        const block = schedules.find((s) => s.id === contextMenu.blockId);
+        const blockUser = block ? users.find((u) => u.id === block.user_id) : undefined;
+        const blockEffective = effectiveRate(blockUser, currentStore, orgDefaultRate);
+        const stored = block?.hourly_rate ?? 0;
+        // Sync 메뉴 노출 조건: GM 권한 + cascade rate 존재 + stored와 다름
+        const canSync = isGMView && blockEffective != null && stored !== blockEffective;
+        return (
+          <ContextMenu
+            x={contextMenu.x} y={contextMenu.y}
+            status={contextMenu.status}
+            userRole={isGMView ? "gm" : "sv"}
+            canSyncRate={canSync}
+            syncRateLabel={canSync ? `$${blockEffective}/hr` : undefined}
+            onClose={() => setContextMenu(null)}
+            onAction={handleContextAction}
+          />
+        );
+      })()}
+
+      {/* History Panel */}
+      <HistoryPanel
+        open={historyOpen}
+        onClose={() => setHistoryOpen(false)}
+        scheduleId={historyScheduleId}
+        staffName={(() => {
+          const s = historyScheduleId ? schedules.find((x) => x.id === historyScheduleId) : null;
+          const u = s ? users.find((x) => x.id === s.user_id) : null;
+          return u?.full_name ?? undefined;
+        })()}
+        date={(() => {
+          const s = historyScheduleId ? schedules.find((x) => x.id === historyScheduleId) : null;
+          if (!s) return "";
+          const d = new Date(s.work_date + "T00:00:00");
+          return d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+        })()}
+      />
+
+      {/* Swap Modal */}
+      {(() => {
+        const fromSchedule = swapSourceId ? schedules.find((s) => s.id === swapSourceId) : null;
+        const fromUser = fromSchedule ? users.find((u) => u.id === fromSchedule.user_id) : null;
+        return (
+          <SwapModal
+            open={swapOpen}
+            onClose={() => { setSwapOpen(false); setSwapSourceId(null); }}
+            fromSchedule={fromSchedule ?? null}
+            fromUser={fromUser ?? null}
+            candidateSchedules={schedules}
+            users={users}
+            isSubmitting={swapMutation.isPending}
+            onSwap={(otherId, reason) => {
+              if (!swapSourceId) return;
+              swapMutation.mutate({ id: swapSourceId, other_schedule_id: otherId, reason }, {
+                onSuccess: () => { setSwapOpen(false); setSwapSourceId(null); },
+              });
+            }}
+          />
+        );
+      })()}
+
+      {/* Schedule Edit Modal */}
+      {(() => {
+        const editSchedule = editModal.blockId ? schedules.find((s) => s.id === editModal.blockId) : null;
+        const targetUserId = editSchedule?.user_id ?? editModal.staffId;
+        const targetUser = targetUserId ? users.find((u) => u.id === targetUserId) : undefined;
+        const editInheritedRate = effectiveRate(targetUser, currentStore, orgDefaultRate);
+        return (
+          <ScheduleEditModal
+            open={editModal.open}
+            mode={editModal.mode}
+            schedule={editSchedule}
+            prefilledUserId={editModal.staffId}
+            prefilledDate={editModal.date}
+            prefilledStartTime={editModal.startTime}
+            users={users}
+            storeId={selectedStore}
+            stores={stores}
+            selectedStoreIds={selectedStores}
+            inheritedRate={editInheritedRate}
+            showCost={isGMView}
+            onClose={closeEditModal}
+            onSave={handleScheduleEditSave}
+            isSaving={createMutation.isPending || updateMutation.isPending}
+            onDelete={editModal.mode === "edit" && editModal.blockId
+              ? () => {
+                  const id = editModal.blockId!;
+                  closeEditModal();
+                  setConfirmDialog({ open: true, type: "delete", blockId: id });
+                }
+              : undefined}
+          />
+        );
+      })()}
+
+      {/* Confirm Dialog */}
+      {(() => {
+        const t = confirmDialog.type;
+        const cfg: Record<typeof t, { title: string; message: string; label: string; variant: "danger" | "primary"; reason: boolean; reasonLabel?: string }> = {
+          delete:  { title: "Delete Schedule?", message: "This schedule will be permanently deleted. This action cannot be undone.", label: "Delete", variant: "danger", reason: false },
+          revert:  { title: "Revert to Requested?", message: "This confirmed schedule will be reverted to requested status and will need to be re-confirmed.", label: "Revert", variant: "primary", reason: false },
+          reject:  { title: "Reject Schedule", message: "This will mark the schedule as rejected. You can optionally provide a reason.", label: "Reject", variant: "danger", reason: true, reasonLabel: "Rejection reason (optional)" },
+          cancel:  { title: "Cancel Confirmed Schedule", message: "This will cancel the confirmed schedule. You can optionally provide a reason.", label: "Cancel Schedule", variant: "danger", reason: true, reasonLabel: "Cancellation reason (optional)" },
+          confirm: { title: "Confirm Schedule?", message: "This will mark the schedule as confirmed and notify the staff member.", label: "Confirm", variant: "primary", reason: false },
+        };
+        const c = cfg[t];
+        const close = () => setConfirmDialog({ open: false, type: "delete" });
+        const handle = (reason?: string) => {
+          const id = confirmDialog.blockId;
+          if (!id) { close(); return; }
+          if (t === "delete") deleteMutation.mutate(id);
+          else if (t === "revert") revertMutation.mutate(id);
+          else if (t === "confirm") confirmMutation.mutate(id);
+          else if (t === "reject") rejectMutation.mutate({ id, rejection_reason: reason });
+          else if (t === "cancel") cancelMutation.mutate({ id, cancellation_reason: reason });
+          close();
+        };
+        return (
+          <ConfirmDialog
+            open={confirmDialog.open}
+            title={c.title}
+            message={c.message}
+            confirmLabel={c.label}
+            confirmVariant={c.variant}
+            requiresReason={c.reason}
+            reasonLabel={c.reasonLabel}
+            onConfirm={handle}
+            onCancel={close}
+          />
+        );
+      })()}
+
+      {/* Legend Modal */}
+      <LegendModal open={legendOpen} onClose={() => setLegendOpen(false)} />
+
+      <div className="px-4 sm:px-6 xl:px-8 pb-8">
+        {/* Row 1: Title + Stats */}
+        <div className="flex items-center gap-3 md:gap-5 pt-4 pb-1 min-h-[40px]">
+          <h1 className="text-[22px] font-semibold text-[var(--color-text)] shrink-0">Schedules</h1>
+          {schedulesQ.isLoading && <span className="text-[11px] text-[var(--color-text-muted)]">Loading…</span>}
+          <div className="hidden md:flex items-center gap-3 text-[13px] text-[var(--color-text-secondary)]">
+            <span>Staff: <strong className="text-[14px] text-[var(--color-text)]">{filteredUsers.length}</strong></span>
+            <span className="w-px h-4 bg-[var(--color-border)]" />
+            <span>Scheduled: <strong className="text-[14px] text-[var(--color-text)]">{totals.tc}</strong></span>
+            <span className="w-px h-4 bg-[var(--color-border)]" />
+            <span>Pending: <strong className="text-[14px] text-[var(--color-warning)]">{totals.tp}</strong></span>
+            {isGMView && <>
+              <span className="w-px h-4 bg-[var(--color-border)]" />
+              <span>Cost: <strong className="text-[14px] text-[var(--color-success)]">${totals.lc.toFixed(2)}</strong>{totals.lp > 0 && <strong className="text-[14px] text-[var(--color-warning)]"> +${totals.lp.toFixed(2)}</strong>}</span>
+            </>}
+          </div>
+        </div>
+
+        {/* Row 2: Store(left) | View+Nav+Buttons(right) */}
+        <div className="flex items-center justify-between py-2 gap-2 flex-wrap min-h-[48px]">
+          {/* Left: Store multi-select */}
+          <div className="flex items-center gap-2 shrink-0">
+            <StoreMultiSelect
+              stores={stores}
+              selectedStores={selectedStores}
+              onChange={setSelectedStores}
+            />
+            {!isAllStores && selectedStores.length > 0 && (
+              <span className="text-[12px] text-[var(--color-text-secondary)] hidden sm:inline truncate max-w-[300px]">
+                {selectedStores.map((id) => stores.find((s) => s.id === id)?.name).filter(Boolean).join(", ")}
+              </span>
+            )}
+          </div>
+          {/* Right: View toggle + Nav + Buttons */}
+          <div className="flex items-center gap-2 sm:gap-3">
+            {/* View toggle */}
+            <div className="flex bg-[var(--color-bg)] border border-[var(--color-border)] rounded-lg p-0.5 shrink-0">
+              {(["weekly", "daily"] as const).map((v) => (
+                <button key={v} type="button" onClick={() => setView(v)}
+                  className={`px-2.5 sm:px-3.5 py-1.5 rounded-md text-[12px] sm:text-[13px] font-semibold transition-all ${view === v ? "bg-[var(--color-accent)] text-white" : "text-[var(--color-text-secondary)] hover:text-[var(--color-text)]"}`}>
+                  {v === "weekly" ? "Weekly" : "Daily"}
+                </button>
+              ))}
+            </div>
+            {/* Nav */}
+            <div className="flex items-center gap-1 sm:gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => {
+                  if (view === "weekly") {
+                    const next = new Date(weekStart); next.setDate(next.getDate() - 7); setWeekStart(next);
+                  } else {
+                    const d = new Date(selectedDay + "T00:00:00"); d.setDate(d.getDate() - 1);
+                    setSelectedDay(fmtLocalDate(d));
+                  }
+                }}
+                className="w-8 h-8 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] flex items-center justify-center text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-hover)]"
+                aria-label="Previous period"
+              >
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><polyline points="9 11 5 7 9 3" /></svg>
+              </button>
+              <span className="text-[12px] sm:text-[13px] font-semibold text-[var(--color-text)] min-w-[100px] sm:min-w-[140px] text-center">
+                {view === "weekly"
+                  ? `${weekDates[0]?.dayName} ${weekDates[0]?.dayNum} – ${weekDates[6]?.dayName} ${weekDates[6]?.dayNum}`
+                  : selectedDayLabel}
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  if (view === "weekly") {
+                    const next = new Date(weekStart); next.setDate(next.getDate() + 7); setWeekStart(next);
+                  } else {
+                    const d = new Date(selectedDay + "T00:00:00"); d.setDate(d.getDate() + 1);
+                    setSelectedDay(fmtLocalDate(d));
+                  }
+                }}
+                className="w-8 h-8 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] flex items-center justify-center text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-hover)]"
+                aria-label="Next period"
+              >
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><polyline points="5 3 9 7 5 11" /></svg>
+              </button>
+            </div>
+            {/* Actions */}
+            <button type="button" onClick={() => openAddModal()} className="bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] text-white px-3 sm:px-4 py-2 rounded-lg text-[12px] sm:text-[13px] font-semibold flex items-center gap-1.5 transition-colors shrink-0 whitespace-nowrap">
+              <span className="hidden sm:inline">+</span> Add
+              <span className="hidden md:inline"> Schedule</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setLegendOpen(true)}
+              className="w-8 h-8 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] flex items-center justify-center text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-hover)] shrink-0"
+              title="View legend"
+            >
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+                <circle cx="7" cy="7" r="5.5" />
+                <path d="M5.5 5.5a1.5 1.5 0 113 0c0 1-1.5 1-1.5 2" />
+                <circle cx="7" cy="9.5" r="0.5" fill="currentColor" />
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        {/* Row 3: Filters */}
+        <FilterBar
+          filters={filters}
+          onChange={setFilters}
+          users={users}
+          schedules={schedules}
+          selectedStoreId={selectedStore}
+        />
+
+        {/* Table Grid */}
+        <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl overflow-auto" style={{ maxHeight: "calc(100vh - 260px)" }}>
+          <div style={{ minWidth: view === "weekly" ? 900 : 1100 }}>
+            <table className="w-full border-collapse" style={{ tableLayout: "fixed" }}>
+              <colgroup>
+                <col style={{ width: 180 }} />
+                {columns.map((c) => <col key={c.key} />)}
+                <col style={{ width: 90 }} />
+              </colgroup>
+
+              <StatsHeader
+                columns={columns}
+                showCost={isGMView}
+                sortCol={sortCol}
+                sortState={sortState}
+                onSort={handleSort}
+                onColumnClick={view === "weekly" ? handleDayClick : undefined}
+                firstColLabel={view === "weekly" ? "Day" : "Time"}
+                totalHoursConfirmed={totals.hc}
+                totalHoursPending={totals.hp}
+                totalCostConfirmed={totals.lc}
+                totalCostPending={totals.lp}
+                totalTeamConfirmed={totals.tc}
+                totalTeamPending={totals.tp}
+              />
+
+              <tbody>
+                {sortedUsers.map((u: User) => {
+                  // 신규 스케줄 생성 시 default로 박힐 rate (user → store → org cascade).
+                  // 기존 스케줄의 stored rate와는 무관 — 표시 라벨에만 사용.
+                  const userEffective = effectiveRate(u, currentStore, orgDefaultRate);
+                  const isUserCustom = u.hourly_rate != null;
+                return (
+                  <tr key={u.id} className="border-b border-[var(--color-border)] last:border-b-0 hover:bg-[var(--color-surface-hover)] transition-[background-color] duration-100 relative z-[1]">
+                    <td className="px-4 py-3 border-r-2 border-[var(--color-border)] sticky left-0 z-[5] bg-[var(--color-surface)]">
+                      <div className="flex items-center gap-3">
+                        <div className={`w-8 h-8 rounded-full flex items-center justify-center text-[11px] font-bold shrink-0 ${rolePriorityToColor(u.role_priority)}`}>{getInitials(u.full_name)}</div>
+                        <div className="min-w-0">
+                          <div className="text-[13px] font-semibold text-[var(--color-text)] truncate">{u.full_name || u.username}</div>
+                          <div className="text-[10px] text-[var(--color-text-muted)]">
+                            <span className={u.role_priority <= 20 ? "text-[var(--color-accent)] font-semibold" : u.role_priority <= 30 ? "text-[var(--color-warning)] font-semibold" : "font-semibold"}>{rolePriorityToBadge(u.role_priority)}</span>
+                            {isGMView && userEffective != null ? <span title="Default rate for new schedules"> · ${userEffective}/hr{isUserCustom ? "" : " (inherited)"}</span> : null}
+                            {isGMView && userEffective == null && <span className="text-[var(--color-danger)]"> · No default rate</span>}
+                          </div>
+                        </div>
+                      </div>
+                    </td>
+
+                    {view === "weekly" ? (
+                      <>
+                        {weekDates.map((day, i) => {
+                          const cellSchedules = getSchedulesForCell(u.id, day.date);
+                          return (
+                            <td key={day.date} className={`px-1.5 py-2 border-r border-[var(--color-border)] ${sortCol === i ? "bg-[var(--color-accent)]/[0.04]" : ""}`}>
+                              {cellSchedules.length > 0 ? (
+                                <div className="flex flex-col gap-1">
+                                  {cellSchedules.map((s) => (
+                                    <ScheduleBlock
+                                      key={s.id}
+                                      schedule={s}
+                                      showCost={isGMView}
+                                      attendance={getAttendanceFor(s.id)}
+                                      currentStoreId={isAllStores || selectedStores.length > 1 ? "__all__" : primaryStoreId}
+                                      onClick={(e) => handleBlockClick(e, s)}
+                                    />
+                                  ))}
+                                  {/* 같은 날 추가 버튼 */}
+                                  <button
+                                    type="button"
+                                    onClick={() => openAddModal(u.id, day.date)}
+                                    className="w-full py-0.5 rounded border border-dashed border-[var(--color-border)] text-[var(--color-text-muted)] hover:border-[var(--color-accent)] hover:text-[var(--color-accent)] transition-colors text-[12px] opacity-0 hover:opacity-100 focus:opacity-100"
+                                    title="Add another schedule"
+                                  >
+                                    +
+                                  </button>
+                                </div>
+                              ) : (
+                                <div
+                                  className="h-full min-h-[44px] flex items-center justify-center opacity-0 hover:opacity-40 transition-opacity cursor-pointer"
+                                  role="button"
+                                  onClick={() => openAddModal(u.id, day.date)}
+                                  title={userEffective == null ? "Warning: this user has no hourly rate" : undefined}
+                                >
+                                  {userEffective == null ? (
+                                    <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                                      <path d="M7 4v3m0 2.5h.01M2.5 11.5h9a1 1 0 00.87-1.5L8.37 3a1 1 0 00-1.74 0L2.63 10a1 1 0 00.87 1.5z" stroke="var(--color-warning)" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+                                    </svg>
+                                  ) : (
+                                    <span className="text-[var(--color-text-muted)] text-[16px]">+</span>
+                                  )}
+                                </div>
+                              )}
+                            </td>
+                          );
+                        })}
+                      </>
+                    ) : (
+                      <td colSpan={closeHour - openHour} className="p-0 relative">
+                        {/* Border grid overlay (시간 구분선) */}
+                        <div className="absolute inset-0 grid pointer-events-none" style={{ gridTemplateColumns: `repeat(${closeHour - openHour}, 1fr)` }}>
+                          {dailyHourRange.map((hr) => (
+                            <div key={hr} className="border-r border-[var(--color-border)]" />
+                          ))}
+                        </div>
+                        {/* Content: flex segments (normal flow → 높이 자동 확장) */}
+                        {(() => {
+                          const totalMin = (closeHour - openHour) * 60;
+                          const userScheds = schedules
+                            .filter((s) => s.user_id === u.id && s.work_date === selectedDay)
+                            .sort((a, b) => parseTimeToHours(a.start_time) - parseTimeToHours(b.start_time));
+                          // 구간 분할: gap → sched → gap → sched → gap
+                          type Seg = { type: "gap"; startMin: number; endMin: number } | { type: "sched"; sched: Schedule; startMin: number; endMin: number };
+                          const segments: Seg[] = [];
+                          let cursor = 0;
+                          const seen = new Set<string>();
+                          for (const s of userScheds) {
+                            if (seen.has(s.id)) continue;
+                            seen.add(s.id);
+                            const sStart = Math.max(0, parseTimeToHours(s.start_time) * 60 - openHour * 60);
+                            const sEnd = Math.min(totalMin, parseTimeToHours(s.end_time) * 60 - openHour * 60);
+                            if (sEnd <= sStart) continue;
+                            if (sStart > cursor) segments.push({ type: "gap", startMin: cursor, endMin: sStart });
+                            segments.push({ type: "sched", sched: s, startMin: sStart, endMin: sEnd });
+                            cursor = sEnd;
+                          }
+                          if (cursor < totalMin) segments.push({ type: "gap", startMin: cursor, endMin: totalMin });
+
+                          return (
+                            <div className="relative flex items-stretch min-h-[56px]">
+                              {segments.map((seg, i) => {
+                                const pct = ((seg.endMin - seg.startMin) / totalMin) * 100;
+                                if (seg.type === "gap") {
+                                  // gap 영역 내 시간별 click targets
+                                  const gapStartHr = Math.floor(seg.startMin / 60) + openHour;
+                                  const gapEndHr = Math.ceil(seg.endMin / 60) + openHour;
+                                  return (
+                                    <div key={`g${i}`} className="flex" style={{ width: `${pct}%` }}>
+                                      {Array.from({ length: Math.max(1, gapEndHr - gapStartHr) }, (_, gi) => {
+                                        const clickH = gapStartHr + gi;
+                                        return (
+                                          <div
+                                            key={clickH}
+                                            className="group/cell flex-1 cursor-pointer hover:bg-[var(--color-surface-hover)] relative"
+                                            onClick={() => openAddModal(u.id, selectedDay, `${String(clickH).padStart(2, "0")}:00`)}
+                                            role="button"
+                                          >
+                                            <span className="absolute inset-0 flex items-center justify-center opacity-0 group-hover/cell:opacity-100 transition-opacity text-[var(--color-accent)]">
+                                              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="8" y1="3" x2="8" y2="13" /><line x1="3" y1="8" x2="13" y2="8" /></svg>
+                                            </span>
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                  );
+                                }
+                                return (
+                                  <div key={seg.sched.id} className="bg-[var(--color-bg)] z-10" style={{ width: `${pct}%` }}>
+                                    <ScheduleBlock
+                                      schedule={seg.sched}
+                                      showCost={isGMView}
+                                      attendance={getAttendanceFor(seg.sched.id)}
+                                      currentStoreId={isAllStores || selectedStores.length > 1 ? "__all__" : primaryStoreId}
+                                      onClick={(e) => handleBlockClick(e, seg.sched)}
+                                    />
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          );
+                        })()}
+                      </td>
+                    )}
+
+                    <td className="px-2 py-3 text-center border-l border-[var(--color-border)]">
+                      {view === "weekly" ? (
+                        (() => {
+                          const ch = weekDates.reduce((sum, d) => sum + getUserConfirmedHours(u.id, d.date), 0);
+                          const ph = weekDates.reduce((sum, d) => sum + getUserPendingHours(u.id, d.date), 0);
+                          const lc = weekDates.reduce((sum, d) => sum + getUserConfirmedCost(u.id, d.date), 0);
+                          const lp = weekDates.reduce((sum, d) => sum + getUserPendingCost(u.id, d.date), 0);
+                          const hasMissing = isGMView && userHasNoCost(u.id, weekDates.map((d) => d.date));
+                          return <div className="flex flex-col items-center">
+                            <span className="text-[13px] font-bold text-[var(--color-success)]">{fmtH(ch)}h</span>
+                            {ph > 0 && <span className="text-[10px] font-semibold text-[var(--color-warning)]">+{fmtH(ph)}h</span>}
+                            {isGMView && lc > 0 && <span className="text-[10px] text-[var(--color-success)]">${lc.toFixed(2)}</span>}
+                            {isGMView && lp > 0 && <span className="text-[10px] text-[var(--color-warning)]">+${lp.toFixed(2)}</span>}
+                            {hasMissing && <span className="text-[10px] text-[var(--color-danger)]" title="Some schedules have no stored rate and no inherited rate available">No cost</span>}
+                          </div>;
+                        })()
+                      ) : (
+                        (() => {
+                          const blocks = schedules.filter((b) => b.work_date === selectedDay && b.user_id === u.id && matchesStoreFilter(b.store_id));
+                          const h = blocks.filter((b) => b.status === "confirmed").reduce((sum, b) => sum + getNetWorkHours(b), 0);
+                          const ph = blocks.filter((b) => b.status === "requested").reduce((sum, b) => sum + getNetWorkHours(b), 0);
+                          return <div className="flex flex-col items-center">
+                            {h > 0 && <span className="text-[13px] font-bold text-[var(--color-success)]">{fmtH(h)}h</span>}
+                            {ph > 0 && <span className="text-[10px] font-semibold text-[var(--color-warning)]">+{fmtH(ph)}h</span>}
+                            {h === 0 && ph === 0 && <span className="text-[11px] text-[var(--color-text-muted)]">--</span>}
+                          </div>;
+                        })()
+                      )}
+                    </td>
+                  </tr>
+                );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
