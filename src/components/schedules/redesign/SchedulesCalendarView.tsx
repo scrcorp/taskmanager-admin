@@ -25,12 +25,16 @@ import { StatsHeader } from "./StatsHeader";
 import { ContextMenu } from "./ContextMenu";
 import { HistoryPanel } from "./HistoryPanel";
 import { SwapModal } from "./SwapModal";
+import { SwitchStaffModal } from "./SwitchStaffModal";
 import { ScheduleEditModal, type ScheduleEditPayload } from "./ScheduleEditModal";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { FilterBar, type FilterState } from "./FilterBar";
 import { LegendModal } from "./LegendModal";
+import { MonthlyGrid } from "./MonthlyGrid";
+import { useShifts } from "@/hooks/useShifts";
+import { useWorkRoles } from "@/hooks/useWorkRoles";
 
-type ViewMode = "weekly" | "daily";
+type ViewMode = "weekly" | "daily" | "monthly";
 type SortState = "none" | "confirmed" | "requested";
 
 // ─── Date utilities ──────────────────────────────────────
@@ -244,7 +248,8 @@ export default function SchedulesCalendarView() {
 
   // URL 기반 state 초기화 — back nav 시 자동 복원
   // ?view=weekly|daily&week=YYYY-MM-DD&day=YYYY-MM-DD&store=<id>
-  const initView: ViewMode = searchParams.get("view") === "daily" ? "daily" : "weekly";
+  const initViewParam = searchParams.get("view");
+  const initView: ViewMode = initViewParam === "daily" ? "daily" : initViewParam === "monthly" ? "monthly" : "weekly";
   const initWeekStart: Date = (() => {
     const w = searchParams.get("week");
     if (w) {
@@ -259,6 +264,11 @@ export default function SchedulesCalendarView() {
   const [weekStart, setWeekStart] = useState<Date>(initWeekStart);
   const weekDates = useMemo(() => buildWeekDates(weekStart), [weekStart]);
   const [selectedDay, setSelectedDay] = useState(initSelectedDay);
+  // Monthly
+  const [monthYear, setMonthYear] = useState(() => {
+    const now = new Date();
+    return { year: now.getFullYear(), month: now.getMonth() };
+  });
   // 현재 로그인 사용자의 role 기반으로 cost/actions 표시 여부 결정
   // Owner(10) / GM(20) 만 cost 정보 표시, SV(30) / Staff(40) 는 숨김
   const currentUser = useAuthStore((s) => s.user);
@@ -276,19 +286,23 @@ export default function SchedulesCalendarView() {
   const matchesStoreFilter = (storeId: string) => isAllStores || selectedStoreSet.has(storeId);
   // backward compat alias
   const selectedStore = primaryStoreId;
-  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; blockId: string; status: string } | null>(null);
+  const [contextMenu, setContextMenu] = useState<{ anchorEl: HTMLElement; blockId: string; status: string } | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [historyScheduleId, setHistoryScheduleId] = useState<string | undefined>(undefined);
   const [swapOpen, setSwapOpen] = useState(false);
   const [swapSourceId, setSwapSourceId] = useState<string | null>(null);
+  const [switchStaffOpen, setSwitchStaffOpen] = useState(false);
+  const [switchStaffSourceId, setSwitchStaffSourceId] = useState<string | null>(null);
   const [editModal, setEditModal] = useState<{ open: boolean; mode: "add" | "edit"; blockId?: string; staffId?: string; date?: string; startTime?: string }>({ open: false, mode: "add" });
   const [confirmDialog, setConfirmDialog] = useState<{ open: boolean; type: "delete" | "revert" | "reject" | "cancel" | "confirm"; blockId?: string }>({ open: false, type: "delete" });
   const [filters, setFilters] = useState<FilterState>({ staffIds: [], roles: [], statuses: [], positions: [], shifts: [] });
   const [legendOpen, setLegendOpen] = useState(false);
 
   // ─── Data fetching ────────────────────────────────────
-  const dateFrom = weekDates[0]?.date;
-  const dateTo = weekDates[6]?.date;
+  const monthDateFrom = useMemo(() => fmtLocalDate(new Date(monthYear.year, monthYear.month, 1)), [monthYear]);
+  const monthDateTo = useMemo(() => fmtLocalDate(new Date(monthYear.year, monthYear.month + 1, 0)), [monthYear]);
+  const dateFrom = view === "monthly" ? monthDateFrom : weekDates[0]?.date;
+  const dateTo = view === "monthly" ? monthDateTo : weekDates[6]?.date;
   // 스토어 선택 시 해당 스토어에 배정된(user_stores) 직원만 서버에서 필터링
   const userFilters = useMemo(
     () => (!isAllStores && selectedStores.length > 0 ? { store_ids: selectedStores } : undefined),
@@ -305,7 +319,7 @@ export default function SchedulesCalendarView() {
     user_ids: allUserIds,
     date_from: dateFrom,
     date_to: dateTo,
-    per_page: 500,
+    per_page: view === "monthly" ? 2000 : 500,
   });
   const attendancesQ = useAttendances({
     store_id: selectedStore || undefined,
@@ -318,6 +332,11 @@ export default function SchedulesCalendarView() {
   const stores = storesQ.data ?? [];
   const schedules: Schedule[] = schedulesQ.data?.items ?? [];
   const attendances = attendancesQ.data?.items ?? [];
+
+  // Monthly용 shifts + workRoles (단일 store 선택 시)
+  const isSingleStore = selectedStores.length === 1;
+  const shiftsQ = useShifts(isSingleStore ? selectedStores[0] : undefined);
+  const monthlyWorkRolesQ = useWorkRoles(isSingleStore ? selectedStores[0] : undefined);
 
   // 첫 store 자동 선택 (URL store 파라미터가 있으면 우선)
   useEffect(() => {
@@ -342,12 +361,18 @@ export default function SchedulesCalendarView() {
     if (typeof window === "undefined") return;
     const params = new URLSearchParams(window.location.search);
     params.set("view", view);
-    if (view === "weekly") {
+    if (view === "monthly") {
+      params.set("month", `${monthYear.year}-${String(monthYear.month + 1).padStart(2, "0")}`);
+      params.delete("week");
+      params.delete("day");
+    } else if (view === "weekly") {
       params.set("week", weekDates[0]?.date ?? "");
       params.delete("day");
+      params.delete("month");
     } else {
       params.set("day", selectedDay);
       params.delete("week");
+      params.delete("month");
     }
     params.set("store", isAllStores ? "all" : selectedStores.join(","));
     const next = `${window.location.pathname}?${params.toString()}`;
@@ -355,7 +380,7 @@ export default function SchedulesCalendarView() {
       window.history.replaceState(null, "", next);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [view, weekStart, selectedDay, selectedStores, isAllStores]);
+  }, [view, weekStart, selectedDay, selectedStores, isAllStores, monthYear]);
 
   // selectedDay가 현재 weekDates 밖으로 나가면 weekStart 자동 동기화
   useEffect(() => {
@@ -549,12 +574,14 @@ export default function SchedulesCalendarView() {
     const sumHours = (arr: Schedule[]) => arr.reduce((sum, s) => sum + getNetWorkHours(s), 0);
     // stored rate만 합산. NULL은 0으로 (No cost로 표시되는 schedule들은 합계에서 빠짐).
     const sumCost = (arr: Schedule[]) => arr.reduce((sum, s) => sum + getNetWorkHours(s) * (s.hourly_rate ?? 0), 0);
+    const todayStr = new Date().toISOString().slice(0, 10);
     return {
       key: day.date,
       label: day.dayName,
       sublabel: day.dayNum,
       isSunday: day.isSunday,
       isSaturday: day.isWeekend && !day.isSunday,
+      isNow: day.date === todayStr,
       teamConfirmed: new Set(confirmed.map((s) => s.user_id)).size,
       teamPending: new Set(pending.map((s) => s.user_id)).size,
       hoursConfirmed: sumHours(confirmed),
@@ -624,7 +651,21 @@ export default function SchedulesCalendarView() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [schedules, selectedDay, selectedStores, isAllStores, users]);
 
-  const totals = view === "weekly" ? weeklyTotals : dailyTotals;
+  const monthlyTotals = useMemo(() => {
+    const filtered = schedules.filter((s) => s.work_date >= monthDateFrom && s.work_date <= monthDateTo && matchesStoreFilter(s.store_id));
+    const conf = filtered.filter((s) => s.status === "confirmed");
+    const pend = filtered.filter((s) => s.status === "requested");
+    const sumHours = (arr: Schedule[]) => arr.reduce((sum, s) => sum + getNetWorkHours(s), 0);
+    const sumCost = (arr: Schedule[]) => arr.reduce((sum, s) => sum + getNetWorkHours(s) * (s.hourly_rate ?? 0), 0);
+    return {
+      hc: sumHours(conf), hp: sumHours(pend),
+      lc: sumCost(conf), lp: sumCost(pend),
+      tc: new Set(conf.map((s) => s.user_id)).size,
+      tp: new Set(pend.map((s) => s.user_id)).size,
+    };
+  }, [schedules, monthDateFrom, monthDateTo, selectedStores, isAllStores]);
+
+  const totals = view === "monthly" ? monthlyTotals : view === "weekly" ? weeklyTotals : dailyTotals;
   const columns = view === "weekly" ? weeklyColumns : dailyColumns;
   // selectedDay 직접 파싱 — weekDates lookup은 selectedDay가 weekDates 밖이면 undefined가 됨
   const selectedDayLabel = (() => {
@@ -653,7 +694,7 @@ export default function SchedulesCalendarView() {
   function handleBlockClick(e: React.MouseEvent, sched: Schedule) {
     e.preventDefault();
     e.stopPropagation();
-    setContextMenu({ x: e.clientX, y: e.clientY, blockId: sched.id, status: sched.status });
+    setContextMenu({ anchorEl: e.currentTarget as HTMLElement, blockId: sched.id, status: sched.status });
   }
 
   function handleContextAction(action: string) {
@@ -666,6 +707,10 @@ export default function SchedulesCalendarView() {
     if (action === "swap") {
       setSwapSourceId(blockId);
       setSwapOpen(true);
+    }
+    if (action === "switch-staff") {
+      setSwitchStaffSourceId(blockId);
+      setSwitchStaffOpen(true);
     }
     if (action === "details") router.push(`/schedules/${blockId}`);
     if (action === "edit") setEditModal({ open: true, mode: "edit", blockId });
@@ -720,6 +765,9 @@ export default function SchedulesCalendarView() {
         onSuccess: closeEditModal,
       });
     } else if (editModal.mode === "edit" && editModal.blockId) {
+      const orig = schedules.find((s) => s.id === editModal.blockId);
+      const userChanged = orig && payload.userId !== orig.user_id;
+      const rateUntouched = orig && payload.hourlyRate === orig.hourly_rate;
       updateMutation.mutate({
         id: editModal.blockId,
         data: {
@@ -731,7 +779,8 @@ export default function SchedulesCalendarView() {
           break_start_time: payload.breakStartTime,
           break_end_time: payload.breakEndTime,
           note: payload.notes || null,
-          hourly_rate: payload.hourlyRate,
+          // user 변경 + rate 미수정 → null로 보내서 백엔드가 새 user 기준 재계산
+          hourly_rate: (userChanged && rateUntouched) ? null : payload.hourlyRate,
         },
       }, {
         onSuccess: closeEditModal,
@@ -796,7 +845,7 @@ export default function SchedulesCalendarView() {
   // ─── Render ───────────────────────────────────────────
 
   return (
-    <div className="min-h-screen bg-[var(--color-bg)]">
+    <div className="min-h-screen bg-[var(--color-bg)] -m-4 md:-m-8">
       {/* Context Menu */}
       {contextMenu && (() => {
         const block = schedules.find((s) => s.id === contextMenu.blockId);
@@ -807,7 +856,7 @@ export default function SchedulesCalendarView() {
         const canSync = isGMView && blockEffective != null && stored !== blockEffective;
         return (
           <ContextMenu
-            x={contextMenu.x} y={contextMenu.y}
+            anchorEl={contextMenu.anchorEl}
             status={contextMenu.status}
             userRole={isGMView ? "gm" : "sv"}
             canSyncRate={canSync}
@@ -853,6 +902,28 @@ export default function SchedulesCalendarView() {
               if (!swapSourceId) return;
               swapMutation.mutate({ id: swapSourceId, other_schedule_id: otherId, reason }, {
                 onSuccess: () => { setSwapOpen(false); setSwapSourceId(null); },
+              });
+            }}
+          />
+        );
+      })()}
+
+      {/* Switch Staff Modal */}
+      {(() => {
+        const srcSchedule = switchStaffSourceId ? schedules.find((s) => s.id === switchStaffSourceId) : null;
+        const srcUser = srcSchedule ? users.find((u) => u.id === srcSchedule.user_id) ?? null : null;
+        return (
+          <SwitchStaffModal
+            open={switchStaffOpen}
+            onClose={() => { setSwitchStaffOpen(false); setSwitchStaffSourceId(null); }}
+            schedule={srcSchedule ?? null}
+            currentUser={srcUser}
+            users={users}
+            isSubmitting={updateMutation.isPending}
+            onSwitch={(newUserId) => {
+              if (!switchStaffSourceId) return;
+              updateMutation.mutate({ id: switchStaffSourceId, data: { user_id: newUserId } }, {
+                onSuccess: () => { setSwitchStaffOpen(false); setSwitchStaffSourceId(null); },
               });
             }}
           />
@@ -933,7 +1004,7 @@ export default function SchedulesCalendarView() {
       {/* Legend Modal */}
       <LegendModal open={legendOpen} onClose={() => setLegendOpen(false)} />
 
-      <div className="px-4 sm:px-6 xl:px-8 pb-8">
+      <div className="px-3 sm:px-4 lg:px-6 pb-4">
         {/* Row 1: Title + Stats */}
         <div className="flex items-center gap-3 md:gap-5 pt-4 pb-1 min-h-[40px]">
           <h1 className="text-[22px] font-semibold text-[var(--color-text)] shrink-0">Schedules</h1>
@@ -970,10 +1041,10 @@ export default function SchedulesCalendarView() {
           <div className="flex items-center gap-2 sm:gap-3">
             {/* View toggle */}
             <div className="flex bg-[var(--color-bg)] border border-[var(--color-border)] rounded-lg p-0.5 shrink-0">
-              {(["weekly", "daily"] as const).map((v) => (
-                <button key={v} type="button" onClick={() => setView(v)}
+              {(["monthly", "weekly", "daily"] as const).map((v) => (
+                <button key={v} type="button" onClick={() => { setView(v); if (v === "daily") setSelectedDay(new Date().toISOString().slice(0, 10)); }}
                   className={`px-2.5 sm:px-3.5 py-1.5 rounded-md text-[12px] sm:text-[13px] font-semibold transition-all ${view === v ? "bg-[var(--color-accent)] text-white" : "text-[var(--color-text-secondary)] hover:text-[var(--color-text)]"}`}>
-                  {v === "weekly" ? "Weekly" : "Daily"}
+                  {v === "monthly" ? "Monthly" : v === "weekly" ? "Weekly" : "Daily"}
                 </button>
               ))}
             </div>
@@ -982,7 +1053,12 @@ export default function SchedulesCalendarView() {
               <button
                 type="button"
                 onClick={() => {
-                  if (view === "weekly") {
+                  if (view === "monthly") {
+                    setMonthYear((p) => {
+                      const d = new Date(p.year, p.month - 1, 1);
+                      return { year: d.getFullYear(), month: d.getMonth() };
+                    });
+                  } else if (view === "weekly") {
                     const next = new Date(weekStart); next.setDate(next.getDate() - 7); setWeekStart(next);
                   } else {
                     const d = new Date(selectedDay + "T00:00:00"); d.setDate(d.getDate() - 1);
@@ -994,15 +1070,35 @@ export default function SchedulesCalendarView() {
               >
                 <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><polyline points="9 11 5 7 9 3" /></svg>
               </button>
-              <span className="text-[12px] sm:text-[13px] font-semibold text-[var(--color-text)] min-w-[100px] sm:min-w-[140px] text-center">
-                {view === "weekly"
-                  ? `${weekDates[0]?.dayName} ${weekDates[0]?.dayNum} – ${weekDates[6]?.dayName} ${weekDates[6]?.dayNum}`
+              <span className="text-[12px] sm:text-[13px] font-semibold text-[var(--color-text)] min-w-[100px] sm:min-w-[200px] text-center tabular-nums">
+                {view === "monthly"
+                  ? `${new Date(monthYear.year, monthYear.month).toLocaleDateString("en-US", { month: "long" }).toUpperCase()} ${monthYear.year}`
+                  : view === "weekly"
+                  ? (() => {
+                      const d0 = weekDates[0]?.date ? new Date(weekDates[0].date + "T00:00:00") : null;
+                      const d6 = weekDates[6]?.date ? new Date(weekDates[6].date + "T00:00:00") : null;
+                      if (!d0 || !d6) return "";
+                      const nextJan1 = new Date(d0.getFullYear() + 1, 0, 1);
+                      const yr = (d0 <= nextJan1 && nextJan1 <= d6) ? d0.getFullYear() + 1 : d0.getFullYear();
+                      const jan1 = new Date(yr, 0, 1);
+                      const w1Sun = new Date(jan1); w1Sun.setDate(w1Sun.getDate() - w1Sun.getDay());
+                      const wk = Math.round((d0.getTime() - w1Sun.getTime()) / (7 * 86400000)) + 1;
+                      const m0 = d0.toLocaleDateString("en-US", { month: "short" }).toUpperCase();
+                      const m6 = d6.toLocaleDateString("en-US", { month: "short" }).toUpperCase();
+                      const crossYear = d0.getFullYear() !== d6.getFullYear();
+                      return `[W${wk}${crossYear ? ` '${String(yr).slice(2)}` : ""}] ${m0} ${d0.getDate()} – ${m6} ${d6.getDate()}`;
+                    })()
                   : selectedDayLabel}
               </span>
               <button
                 type="button"
                 onClick={() => {
-                  if (view === "weekly") {
+                  if (view === "monthly") {
+                    setMonthYear((p) => {
+                      const d = new Date(p.year, p.month + 1, 1);
+                      return { year: d.getFullYear(), month: d.getMonth() };
+                    });
+                  } else if (view === "weekly") {
                     const next = new Date(weekStart); next.setDate(next.getDate() + 7); setWeekStart(next);
                   } else {
                     const d = new Date(selectedDay + "T00:00:00"); d.setDate(d.getDate() + 1);
@@ -1044,14 +1140,29 @@ export default function SchedulesCalendarView() {
           selectedStoreId={selectedStore}
         />
 
-        {/* Table Grid */}
-        <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl overflow-auto" style={{ maxHeight: "calc(100vh - 260px)" }}>
-          <div style={{ minWidth: view === "weekly" ? 900 : 1100 }}>
+        {/* Monthly Grid */}
+        {view === "monthly" && (
+          <MonthlyGrid
+            year={monthYear.year}
+            month={monthYear.month}
+            schedules={schedules}
+            shifts={shiftsQ.data ?? []}
+            workRoles={monthlyWorkRolesQ.data ?? []}
+            isSingleStore={isSingleStore}
+            showCost={isGMView}
+            onDayClick={(date) => { setSelectedDay(date); setView("daily"); }}
+            onWeekClick={(date) => { setWeekStart(getWeekStart(new Date(date + "T00:00:00"))); setView("weekly"); }}
+          />
+        )}
+
+        {/* Table Grid (Weekly / Daily) */}
+        {view !== "monthly" && <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl overflow-auto flex-1" style={{ maxHeight: "calc(100vh - 220px)" }}>
+          <div style={{ minWidth: 220 + columns.length * (view === "weekly" ? 120 : 52) + 90 }}>
             <table className="w-full border-collapse" style={{ tableLayout: "fixed" }}>
               <colgroup>
-                <col style={{ width: 180 }} />
+                <col className="w-[180px] xl:w-[220px]" />
                 {columns.map((c) => <col key={c.key} />)}
-                <col style={{ width: 90 }} />
+                <col className="w-[80px] xl:w-[90px]" />
               </colgroup>
 
               <StatsHeader
@@ -1252,7 +1363,7 @@ export default function SchedulesCalendarView() {
               </tbody>
             </table>
           </div>
-        </div>
+        </div>}
       </div>
     </div>
   );

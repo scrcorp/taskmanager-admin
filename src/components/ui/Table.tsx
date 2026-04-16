@@ -15,12 +15,13 @@ import { cn } from "@/lib/utils";
  * @param emptyMessage - 데이터 없을 때 메시지 (Message when data is empty)
  */
 
-interface Column<T> {
+export interface Column<T> {
   key: string;
   header: string | React.ReactNode;
-  render?: (item: T) => React.ReactNode;
+  render?: (item: T, index: number) => React.ReactNode;
   className?: string;
   hideOnMobile?: boolean;
+  sortable?: boolean;
 }
 
 interface TableProps<T> {
@@ -30,6 +31,9 @@ interface TableProps<T> {
   onRowClick?: (item: T) => void;
   emptyMessage?: string;
   rowClassName?: (item: T) => string;
+  sortKey?: string;
+  sortDirection?: "asc" | "desc";
+  onSort?: (key: string) => void;
 }
 
 function SkeletonRow({ columnCount }: { columnCount: number }): React.ReactElement {
@@ -51,6 +55,9 @@ export function Table<T extends { id?: string }>({
   onRowClick,
   emptyMessage = "No data available.",
   rowClassName,
+  sortKey,
+  sortDirection,
+  onSort,
 }: TableProps<T>): React.ReactElement {
   const skeletonRowCount: number = 5;
 
@@ -62,13 +69,29 @@ export function Table<T extends { id?: string }>({
             {columns.map((column: Column<T>) => (
               <th
                 key={column.key}
+                onClick={column.sortable && onSort ? () => onSort(column.key) : undefined}
                 className={cn(
                   "px-2 md:px-4 py-3 text-left text-xs font-medium text-text-muted uppercase tracking-wider",
                   column.hideOnMobile && "hidden md:table-cell",
+                  column.sortable && onSort && "cursor-pointer select-none hover:text-text transition-colors",
                   column.className,
                 )}
               >
-                {column.header}
+                <span className="inline-flex items-center gap-1">
+                  {column.header}
+                  {column.sortable && onSort && (
+                    sortKey === column.key ? (
+                      <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" className={cn("transition-transform", sortDirection === "desc" && "rotate-180")}>
+                        <polyline points="2.5 6 5 3.5 7.5 6" />
+                      </svg>
+                    ) : (
+                      <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" className="opacity-30">
+                        <polyline points="3 4 5 2 7 4" />
+                        <polyline points="3 6 5 8 7 6" />
+                      </svg>
+                    )
+                  )}
+                </span>
               </th>
             ))}
           </tr>
@@ -108,7 +131,7 @@ export function Table<T extends { id?: string }>({
                     )}
                   >
                     {column.render
-                      ? column.render(item)
+                      ? column.render(item, index)
                       : (() => {
                           const val = (item as Record<string, unknown>)[column.key];
                           if (val == null) return "";

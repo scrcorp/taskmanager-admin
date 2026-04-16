@@ -17,6 +17,7 @@ import { useStores } from "@/hooks/useStores";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Table, Badge, Modal, Select } from "@/components/ui";
+import type { Column } from "@/components/ui/Table";
 import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
 import { useToast } from "@/components/ui/Toast";
 import { formatDate, parseApiError } from "@/lib/utils";
@@ -33,15 +34,6 @@ interface UserFormData {
   email: string;
   phone: string;
   role_id: string;
-}
-
-/** 테이블 컬럼 타입 / Table column type */
-interface Column<T> {
-  key: string;
-  header: string;
-  render?: (item: T) => React.ReactNode;
-  className?: string;
-  hideOnMobile?: boolean;
 }
 
 /** 초기 폼 상태 / Initial form state */
@@ -66,16 +58,28 @@ export default function UsersPage(): React.ReactElement {
   /** 필터 상태 — 멀티셀렉트 */
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [selectedStaffIds, setSelectedStaffIds] = useState<string[]>([]);
-  const [staffSearch, setStaffSearch] = useState<string>("");
   const [selectedRoles, setSelectedRoles] = useState<string[]>([]);
   const [selectedStoreIds, setSelectedStoreIds] = useState<string[]>([]);
+  const [emailFilter, setEmailFilter] = useState<"all" | "verified" | "unverified">("all");
   const [openFilter, setOpenFilter] = useState<string | null>(null);
+  const [sortKey, setSortKey] = useState<string | null>(null);
+  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
   const filterRef = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLDivElement>(null);
 
   /** 외부 클릭 시 드롭다운 닫기 */
   useEffect(() => {
     function handleClick(e: MouseEvent) {
-      if (filterRef.current && !filterRef.current.contains(e.target as Node)) setOpenFilter(null);
+      const target = e.target as Node;
+      // 필터바 밖 클릭 → 모든 드롭다운 닫기
+      if (filterRef.current && !filterRef.current.contains(target)) {
+        setOpenFilter(null);
+        return;
+      }
+      // 필터바 안이지만 검색영역 밖 클릭 → staff 드롭다운만 닫기
+      if (searchRef.current && !searchRef.current.contains(target)) {
+        setOpenFilter((prev) => prev === "staff" ? null : prev);
+      }
     }
     document.addEventListener("mousedown", handleClick);
     return () => document.removeEventListener("mousedown", handleClick);
@@ -127,6 +131,16 @@ export default function UsersPage(): React.ReactElement {
     [userList],
   );
 
+  /** 정렬 핸들러 */
+  const handleSort = useCallback((key: string) => {
+    if (sortKey === key) {
+      setSortDirection((prev) => prev === "asc" ? "desc" : "asc");
+    } else {
+      setSortKey(key);
+      setSortDirection("asc");
+    }
+  }, [sortKey]);
+
   /** 필터링 + 정렬된 사용자 목록 / Filtered and sorted user list */
   const filteredUsers: User[] = useMemo(() => {
     let result: User[] = userList;
@@ -155,22 +169,48 @@ export default function UsersPage(): React.ReactElement {
       );
     }
 
+    // Email verified 필터
+    if (emailFilter === "verified") {
+      result = result.filter((user: User) => user.email_verified);
+    } else if (emailFilter === "unverified") {
+      result = result.filter((user: User) => !user.email_verified);
+    }
+
     // Inactive 필터: 체크 해제 시 Active만 표시
     if (!showInactive) {
       result = result.filter((user: User) => user.is_active);
-    } else {
+    }
+
+    // 정렬
+    if (sortKey) {
       result = [...result].sort((a: User, b: User) => {
-        if (a.is_active === b.is_active) {
-          return a.full_name.localeCompare(b.full_name);
+        const aVal = (a as unknown as Record<string, unknown>)[sortKey];
+        const bVal = (b as unknown as Record<string, unknown>)[sortKey];
+        if (aVal == null && bVal == null) return 0;
+        if (aVal == null) return 1;
+        if (bVal == null) return -1;
+        if (typeof aVal === "boolean" && typeof bVal === "boolean") {
+          return sortDirection === "asc"
+            ? (aVal === bVal ? 0 : aVal ? -1 : 1)
+            : (aVal === bVal ? 0 : aVal ? 1 : -1);
         }
+        if (typeof aVal === "string" && typeof bVal === "string") {
+          return sortDirection === "asc" ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
+        }
+        return sortDirection === "asc" ? Number(aVal) - Number(bVal) : Number(bVal) - Number(aVal);
+      });
+    } else if (showInactive) {
+      // 정렬키 없을 때만 active-first 기본 정렬
+      result = [...result].sort((a: User, b: User) => {
+        if (a.is_active === b.is_active) return a.full_name.localeCompare(b.full_name);
         return a.is_active ? -1 : 1;
       });
     }
 
     return result;
-  }, [userList, searchQuery, selectedStaffIds, selectedRoles, showInactive]);
+  }, [userList, searchQuery, selectedStaffIds, selectedRoles, emailFilter, showInactive, sortKey, sortDirection]);
 
-  const totalFilterCount = selectedStaffIds.length + selectedRoles.length + selectedStoreIds.length;
+  const totalFilterCount = selectedStaffIds.length + selectedRoles.length + selectedStoreIds.length + (emailFilter !== "all" ? 1 : 0);
 
   /** 사용자 생성 핸들러 / Handle user creation */
   const handleCreate = useCallback(async (): Promise<void> => {
@@ -222,8 +262,17 @@ export default function UsersPage(): React.ReactElement {
   const columns: Column<User>[] = useMemo(() => {
     const cols: Column<User>[] = [
       {
+        key: "no",
+        header: "No",
+        className: "w-12",
+        render: (_: User, index: number) => (
+          <span className="text-text-muted text-xs">{index + 1}</span>
+        ),
+      },
+      {
         key: "full_name",
         header: "Full Name",
+        sortable: true,
         render: (user: User) => (
           <div>
             <p className="font-medium text-text">{user.full_name}</p>
@@ -234,6 +283,7 @@ export default function UsersPage(): React.ReactElement {
       {
         key: "role_name",
         header: "Role",
+        sortable: true,
         render: (user: User) => (
           <Badge variant={getRoleBadgeVariant(user.role_name)}>
             {user.role_name}
@@ -243,6 +293,7 @@ export default function UsersPage(): React.ReactElement {
       {
         key: "email",
         header: "Email",
+        sortable: true,
         hideOnMobile: true,
         render: (user: User) => (
           <span className="text-text-secondary text-sm flex items-center gap-1.5">
@@ -273,6 +324,7 @@ export default function UsersPage(): React.ReactElement {
     cols.push({
       key: "created_at",
       header: "Created",
+      sortable: true,
       hideOnMobile: true,
       render: (user: User) => (
         <span className="text-text-muted text-xs">
@@ -325,72 +377,51 @@ export default function UsersPage(): React.ReactElement {
       {/* Filter Bar */}
       <div ref={filterRef} className="bg-surface border border-border rounded-xl px-4 py-3 mb-4">
         <div className="flex items-center gap-2 flex-wrap">
-          {/* Search */}
-          <div className="relative">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-text-muted" />
+          {/* Search + Staff dropdown */}
+          <div ref={searchRef} className="relative">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-text-muted z-10" />
             <input
               type="text"
               placeholder="Search..."
               value={searchQuery}
-              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchQuery(e.target.value)}
-              className="w-48 rounded-lg border border-border bg-bg pl-8 pr-3 py-1.5 text-[12px] text-text placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent"
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => { setSearchQuery(e.target.value); setOpenFilter("staff"); }}
+              onFocus={() => setOpenFilter("staff")}
+              onKeyDown={(e: React.KeyboardEvent) => { if (e.key === "Escape") { e.preventDefault(); setOpenFilter(null); } }}
+              className={`w-48 rounded-lg border border-border bg-bg pl-8 pr-3 py-1.5 text-[12px] text-text placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent ${selectedStaffIds.length > 0 ? "pr-8" : ""}`}
             />
-          </div>
-
-          {/* Staff Multi-select */}
-          <div className="relative">
-            <button
-              type="button"
-              onClick={() => setOpenFilter(openFilter === "staff" ? null : "staff")}
-              className={`px-3 py-1.5 rounded-lg text-[12px] font-semibold border flex items-center gap-1.5 transition-colors ${
-                selectedStaffIds.length > 0
-                  ? "bg-accent-muted text-accent border-accent/30"
-                  : "bg-surface text-text-secondary border-border hover:border-text-muted hover:text-text"
-              } ${openFilter === "staff" ? "ring-2 ring-accent/20" : ""}`}
-            >
-              Staff
-              {selectedStaffIds.length > 0 && (
-                <span className="bg-accent text-white text-[9px] font-bold rounded-full w-4 h-4 flex items-center justify-center">{selectedStaffIds.length}</span>
-              )}
-              <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" className={`transition-transform ${openFilter === "staff" ? "rotate-180" : ""}`}><polyline points="2.5 4 5 6.5 7.5 4" /></svg>
-            </button>
+            {selectedStaffIds.length > 0 && (
+              <span className="absolute right-2 top-1/2 -translate-y-1/2 bg-accent text-white text-[9px] font-bold rounded-full w-4 h-4 flex items-center justify-center">
+                {selectedStaffIds.length}
+              </span>
+            )}
             {openFilter === "staff" && (
               <div className="absolute top-full left-0 mt-1.5 w-[300px] bg-surface border border-border rounded-xl shadow-[0_8px_24px_rgba(0,0,0,0.12)] z-30 overflow-hidden">
-                <div className="p-2 border-b border-border">
-                  <div className="flex items-center gap-1.5 bg-bg border border-border rounded-lg px-3 py-1.5">
-                    <Search className="h-3.5 w-3.5 text-text-muted" />
-                    <input
-                      type="text"
-                      autoFocus
-                      placeholder="Search by name..."
-                      value={staffSearch}
-                      onChange={(e) => setStaffSearch(e.target.value)}
-                      className="bg-transparent outline-none text-[13px] w-full text-text"
-                    />
-                    {staffSearch && (
-                      <button type="button" onClick={() => setStaffSearch("")} className="text-text-muted hover:text-text">×</button>
-                    )}
-                  </div>
-                </div>
                 <div className="max-h-[280px] overflow-y-auto py-1">
-                  {userList
-                    .filter((u) => !staffSearch.trim() || (u.full_name ?? u.username).toLowerCase().includes(staffSearch.toLowerCase()))
-                    .map((u) => (
-                    <button
-                      key={u.id}
-                      type="button"
-                      onClick={() => setSelectedStaffIds((prev) => prev.includes(u.id) ? prev.filter((id) => id !== u.id) : [...prev, u.id])}
-                      className={`w-full flex items-center gap-2.5 px-3 py-2 text-[13px] text-left transition-colors ${selectedStaffIds.includes(u.id) ? "bg-accent-muted" : "hover:bg-surface-hover"}`}
-                    >
-                      <span className={`w-4 h-4 rounded border-[1.5px] flex items-center justify-center shrink-0 transition-colors ${selectedStaffIds.includes(u.id) ? "bg-accent border-accent" : "border-border"}`}>
-                        {selectedStaffIds.includes(u.id) && (
-                          <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="2 5 4.5 7.5 8 3" /></svg>
-                        )}
-                      </span>
-                      <span className="flex-1 font-medium text-text">{u.full_name || u.username}</span>
-                      <span className="text-[10px] text-text-muted uppercase">{u.role_name}</span>
-                    </button>
-                  ))}
+                  {(() => {
+                    const query = searchQuery.trim().toLowerCase();
+                    const filtered = query
+                      ? userList.filter((u) => (u.full_name ?? u.username).toLowerCase().includes(query) || u.username.toLowerCase().includes(query))
+                      : userList;
+                    if (filtered.length === 0) {
+                      return <p className="px-3 py-4 text-center text-[13px] text-text-muted">No matching staff found.</p>;
+                    }
+                    return filtered.map((u) => (
+                      <button
+                        key={u.id}
+                        type="button"
+                        onClick={() => setSelectedStaffIds((prev) => prev.includes(u.id) ? prev.filter((id) => id !== u.id) : [...prev, u.id])}
+                        className={`w-full flex items-center gap-2.5 px-3 py-2 text-[13px] text-left transition-colors ${selectedStaffIds.includes(u.id) ? "bg-accent-muted" : "hover:bg-surface-hover"}`}
+                      >
+                        <span className={`w-4 h-4 rounded border-[1.5px] flex items-center justify-center shrink-0 transition-colors ${selectedStaffIds.includes(u.id) ? "bg-accent border-accent" : "border-border"}`}>
+                          {selectedStaffIds.includes(u.id) && (
+                            <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="2 5 4.5 7.5 8 3" /></svg>
+                          )}
+                        </span>
+                        <span className="flex-1 font-medium text-text">{u.full_name || u.username}</span>
+                        <span className="text-[10px] text-text-muted uppercase">{u.role_name}</span>
+                      </button>
+                    ));
+                  })()}
                 </div>
               </div>
             )}
@@ -472,6 +503,39 @@ export default function UsersPage(): React.ReactElement {
             )}
           </div>
 
+          {/* Email Verified filter */}
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setOpenFilter(openFilter === "email" ? null : "email")}
+              className={`px-3 py-1.5 rounded-lg text-[12px] font-semibold border flex items-center gap-1.5 transition-colors ${
+                emailFilter !== "all"
+                  ? "bg-accent-muted text-accent border-accent/30"
+                  : "bg-surface text-text-secondary border-border hover:border-text-muted hover:text-text"
+              } ${openFilter === "email" ? "ring-2 ring-accent/20" : ""}`}
+            >
+              Email
+              {emailFilter !== "all" && (
+                <span className="bg-accent text-white text-[9px] font-bold rounded-full w-4 h-4 flex items-center justify-center">1</span>
+              )}
+              <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" className={`transition-transform ${openFilter === "email" ? "rotate-180" : ""}`}><polyline points="2.5 4 5 6.5 7.5 4" /></svg>
+            </button>
+            {openFilter === "email" && (
+              <div className="absolute top-full left-0 mt-1.5 w-[160px] bg-surface border border-border rounded-xl shadow-[0_8px_24px_rgba(0,0,0,0.12)] z-30 overflow-hidden py-1">
+                {(["all", "verified", "unverified"] as const).map((value) => (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => { setEmailFilter(value); setOpenFilter(null); }}
+                    className={`w-full px-3 py-2 text-[13px] text-left transition-colors ${emailFilter === value ? "bg-accent-muted text-accent font-medium" : "text-text hover:bg-surface-hover"}`}
+                  >
+                    {value === "all" ? "All" : value === "verified" ? "Verified" : "Unverified"}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
           {/* Show Inactive */}
           <label className="flex items-center gap-2 cursor-pointer text-[12px] text-text-secondary hover:text-text transition-colors select-none ml-auto">
             <input
@@ -488,7 +552,7 @@ export default function UsersPage(): React.ReactElement {
           {(searchQuery || totalFilterCount > 0) && (
             <button
               type="button"
-              onClick={() => { setSearchQuery(""); setSelectedStaffIds([]); setStaffSearch(""); setSelectedRoles([]); setSelectedStoreIds([]); setOpenFilter(null); }}
+              onClick={() => { setSearchQuery(""); setSelectedStaffIds([]); setSelectedRoles([]); setSelectedStoreIds([]); setEmailFilter("all"); setOpenFilter(null); }}
               className="text-[12px] text-text-muted hover:text-danger flex items-center gap-1 transition-colors"
             >
               <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="9" y1="3" x2="3" y2="9" /><line x1="3" y1="3" x2="9" y2="9" /></svg>
@@ -501,6 +565,12 @@ export default function UsersPage(): React.ReactElement {
         {totalFilterCount > 0 && (
           <div className="flex items-center gap-1.5 mt-2.5 pt-2.5 border-t border-border flex-wrap">
             <span className="text-[11px] text-text-muted mr-1">Active:</span>
+            {emailFilter !== "all" && (
+              <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-accent-muted text-accent rounded-full text-[11px] font-semibold">
+                {emailFilter === "verified" ? "Email Verified" : "Email Unverified"}
+                <button type="button" onClick={() => setEmailFilter("all")} className="opacity-60 hover:opacity-100 ml-0.5">×</button>
+              </span>
+            )}
             {selectedStaffIds.map((id) => {
               const u = userList.find((x) => x.id === id);
               if (!u) return null;
@@ -538,6 +608,9 @@ export default function UsersPage(): React.ReactElement {
         onRowClick={handleRowClick}
         emptyMessage="No staff members found."
         rowClassName={showInactive ? getRowClassName : undefined}
+        sortKey={sortKey ?? undefined}
+        sortDirection={sortDirection}
+        onSort={handleSort}
       />
 
       {/* Create User Modal */}
