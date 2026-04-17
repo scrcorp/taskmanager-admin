@@ -1,10 +1,10 @@
 "use client";
 
 /**
- * SwapModal — 3-step: 직원 검색/선택 → 스케줄 선택 → 확인 프리뷰.
+ * SwapModal (Switch Schedule) — 3-step: 직원 검색/선택 → 스케줄 선택 → 확인 프리뷰.
  */
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import type { Schedule, User } from "@/types";
 
 interface Props {
@@ -37,6 +37,11 @@ export function SwapModal({ open, onClose, fromSchedule, fromUser, candidateSche
   const [reason, setReason] = useState("");
 
   const today = new Date().toISOString().slice(0, 10);
+
+  // 모달 열릴 때 상태 초기화
+  useEffect(() => {
+    if (open) { setStep("staff"); setSearch(""); setTargetUserId(""); setTargetScheduleId(""); setReason(""); }
+  }, [open]);
 
   // Step 1: 다른 직원 목록 (검색 필터)
   const staffCandidates = useMemo(() => {
@@ -82,7 +87,7 @@ export function SwapModal({ open, onClose, fromSchedule, fromUser, candidateSche
       <div className="bg-[var(--color-surface)] rounded-2xl shadow-2xl w-full max-w-md mx-4" onClick={(e) => e.stopPropagation()}>
         {/* Header */}
         <div className="px-6 py-4 border-b border-[var(--color-border)]">
-          <h2 className="text-[16px] font-bold text-[var(--color-text)]">Swap Schedule</h2>
+          <h2 className="text-[16px] font-bold text-[var(--color-text)]">Switch Schedule</h2>
           <div className="text-[12px] text-[var(--color-text-secondary)] mt-0.5">
             {fromName} · {fromSchedule.work_date} · {fromTime}
           </div>
@@ -152,7 +157,7 @@ export function SwapModal({ open, onClose, fromSchedule, fromUser, candidateSche
           <>
             <div className="px-6 py-4 space-y-3">
               <div className="text-[13px] font-medium text-[var(--color-text)]">
-                Select {toName}&apos;s schedule to swap with
+                Select {toName}&apos;s schedule to switch with
               </div>
               <div className="max-h-[240px] overflow-y-auto rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)]">
                 {targetSchedules.map((s) => {
@@ -181,7 +186,7 @@ export function SwapModal({ open, onClose, fromSchedule, fromUser, candidateSche
                   type="text"
                   value={reason}
                   onChange={(e) => setReason(e.target.value)}
-                  placeholder="Why is this swap happening?"
+                  placeholder="Why is this switch happening?"
                   className="w-full px-3 py-2 bg-[var(--color-bg)] border border-[var(--color-border)] rounded-lg text-[13px]"
                 />
               </div>
@@ -230,7 +235,7 @@ export function SwapModal({ open, onClose, fromSchedule, fromUser, candidateSche
               </div>
               {/* Result preview */}
               <div className="bg-[var(--color-accent-muted)] rounded-lg p-3 text-[12px] text-[var(--color-text-secondary)] space-y-1">
-                <div className="font-semibold text-[var(--color-accent)] text-[11px] uppercase tracking-wider mb-1">After swap</div>
+                <div className="font-semibold text-[var(--color-accent)] text-[11px] uppercase tracking-wider mb-1">After switch</div>
                 <div>{fromName} → Schedule B ({targetSchedule.work_date} {toTime})</div>
                 <div>{toName} → Schedule A ({fromSchedule.work_date} {fromTime})</div>
                 <div className="text-[11px] text-[var(--color-text-muted)] mt-1">Hourly rates will be recalculated.</div>
@@ -243,7 +248,7 @@ export function SwapModal({ open, onClose, fromSchedule, fromUser, candidateSche
                 disabled={isSubmitting}
                 onClick={() => onSwap?.(targetScheduleId, reason.trim() || undefined)}
                 className="px-4 py-2 rounded-lg text-[13px] font-semibold bg-[var(--color-accent)] text-white hover:bg-[var(--color-accent-hover)] disabled:opacity-50 disabled:cursor-not-allowed"
-              >{isSubmitting ? "Swapping..." : "Confirm Swap"}</button>
+              >{isSubmitting ? "Switching..." : "Confirm Switch"}</button>
             </div>
           </>
         )}

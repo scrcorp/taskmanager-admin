@@ -11,7 +11,7 @@ import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { useQueries } from "@tanstack/react-query";
 import api from "@/lib/api";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useSchedules, useConfirmSchedule, useRejectSchedule, useDeleteSchedule, useSubmitSchedule, useRevertSchedule, useCancelSchedule, useCreateSchedule, useUpdateSchedule, useSwapSchedule } from "@/hooks/useSchedules";
+import { useSchedules, useConfirmSchedule, useRejectSchedule, useDeleteSchedule, useSubmitSchedule, useRevertSchedule, useCancelSchedule, useCreateSchedule, useUpdateSchedule, useSwitchSchedule } from "@/hooks/useSchedules";
 import { useUsers } from "@/hooks/useUsers";
 import { ROLE_PRIORITY } from "@/lib/permissions";
 import { useStores } from "@/hooks/useStores";
@@ -25,7 +25,7 @@ import { StatsHeader } from "./StatsHeader";
 import { ContextMenu } from "./ContextMenu";
 import { HistoryPanel } from "./HistoryPanel";
 import { SwapModal } from "./SwapModal";
-import { SwitchStaffModal } from "./SwitchStaffModal";
+import { ChangeStaffModal } from "./ChangeStaffModal";
 import { ScheduleEditModal, type ScheduleEditPayload } from "./ScheduleEditModal";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { FilterBar, type FilterState } from "./FilterBar";
@@ -33,6 +33,9 @@ import { LegendModal } from "./LegendModal";
 import { MonthlyGrid } from "./MonthlyGrid";
 import { useShifts } from "@/hooks/useShifts";
 import { useWorkRoles } from "@/hooks/useWorkRoles";
+import { useBulkCreateSchedules, useBulkUpdateSchedules, useBulkDeleteSchedules } from "@/hooks/useSchedules";
+import BulkScheduleView, { type SavePayload } from "./BulkScheduleView";
+import { useToast } from "@/components/ui/Toast";
 
 type ViewMode = "weekly" | "daily" | "monthly";
 type SortState = "none" | "confirmed" | "requested";
@@ -88,9 +91,11 @@ function parseTimeToHours(t: string | null): number {
   return (Number.parseInt(hh ?? "0", 10) || 0) + (Number.parseInt(mm ?? "0", 10) || 0) / 60;
 }
 
-/** 실제 근무시간 (break 제외). cost 계산에 사용. */
+/** 실제 근무시간 (break 제외). cost 계산에 사용. overnight 처리 포함. */
 function getNetWorkHours(s: Schedule): number {
-  const gross = Math.max(0, parseTimeToHours(s.end_time) - parseTimeToHours(s.start_time));
+  const startH = parseTimeToHours(s.start_time);
+  const endH = parseTimeToHours(s.end_time);
+  const gross = endH > startH ? endH - startH : (24 - startH + endH);
   if (s.break_start_time && s.break_end_time) {
     const breakHrs = Math.max(0, parseTimeToHours(s.break_end_time) - parseTimeToHours(s.break_start_time));
     return Math.max(0, gross - breakHrs);
@@ -105,10 +110,11 @@ function fmtH(h: number): string {
 }
 
 function formatHourLabel(h: number): string {
-  if (h === 0) return "12A";
-  if (h < 12) return `${h}A`;
-  if (h === 12) return "12P";
-  return `${h - 12}P`;
+  const hNorm = h % 24; // overnight hours (24, 25, ...) → (0, 1, ...)
+  if (hNorm === 0) return "12A";
+  if (hNorm < 12) return `${hNorm}A`;
+  if (hNorm === 12) return "12P";
+  return `${hNorm - 12}P`;
 }
 
 function rolePriorityToBadge(p: number): string {
@@ -289,14 +295,62 @@ export default function SchedulesCalendarView() {
   const [contextMenu, setContextMenu] = useState<{ anchorEl: HTMLElement; blockId: string; status: string } | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [historyScheduleId, setHistoryScheduleId] = useState<string | undefined>(undefined);
-  const [swapOpen, setSwapOpen] = useState(false);
-  const [swapSourceId, setSwapSourceId] = useState<string | null>(null);
-  const [switchStaffOpen, setSwitchStaffOpen] = useState(false);
-  const [switchStaffSourceId, setSwitchStaffSourceId] = useState<string | null>(null);
+  const [switchOpen, setSwitchOpen] = useState(false);
+  const [switchSourceId, setSwitchSourceId] = useState<string | null>(null);
+  const [changeStaffOpen, setChangeStaffOpen] = useState(false);
+  const [changeStaffSourceId, setChangeStaffSourceId] = useState<string | null>(null);
   const [editModal, setEditModal] = useState<{ open: boolean; mode: "add" | "edit"; blockId?: string; staffId?: string; date?: string; startTime?: string }>({ open: false, mode: "add" });
   const [confirmDialog, setConfirmDialog] = useState<{ open: boolean; type: "delete" | "revert" | "reject" | "cancel" | "confirm"; blockId?: string }>({ open: false, type: "delete" });
   const [filters, setFilters] = useState<FilterState>({ staffIds: [], roles: [], statuses: [], positions: [], shifts: [] });
   const [legendOpen, setLegendOpen] = useState(false);
+
+  // ─── Bulk mode ─────────────────────────────────────
+  const [bulkMode, setBulkMode] = useState(false);
+  const { toast } = useToast();
+  const bulkCreateMutation = useBulkCreateSchedules();
+  const bulkUpdateMutation = useBulkUpdateSchedules();
+  const bulkDeleteMutation = useBulkDeleteSchedules();
+  const bulkSaving = bulkCreateMutation.isPending || bulkUpdateMutation.isPending || bulkDeleteMutation.isPending;
+
+  async function handleBulkSave(payload: SavePayload) {
+    try {
+      // 1. Creates
+      if (payload.creates.length > 0) {
+        const creates = payload.creates.map((e) => ({
+          user_id: e.userId,
+          store_id: e.storeId,
+          work_role_id: e.workRoleId,
+          work_date: e.workDate,
+          start_time: e.startTime,
+          end_time: e.endTime,
+          break_start_time: e.breakStartTime,
+          break_end_time: e.breakEndTime,
+          status: (isGMView ? "confirmed" : "requested") as "confirmed" | "requested",
+        }));
+        await bulkCreateMutation.mutateAsync({ entries: creates, skip_on_conflict: true });
+      }
+      // 2. Updates
+      if (payload.updates.length > 0) {
+        const updates = payload.updates.map((u) => ({
+          id: u.id,
+          work_role_id: u.data.workRoleId,
+          start_time: u.data.startTime,
+          end_time: u.data.endTime,
+          break_start_time: u.data.breakStartTime,
+          break_end_time: u.data.breakEndTime,
+        }));
+        await bulkUpdateMutation.mutateAsync({ updates });
+      }
+      // 3. Deletes
+      if (payload.deletes.length > 0) {
+        await bulkDeleteMutation.mutateAsync({ ids: payload.deletes });
+      }
+      toast({ type: "success", message: `Saved: ${payload.creates.length} created, ${payload.updates.length} updated, ${payload.deletes.length} deleted` });
+      setBulkMode(false);
+    } catch {
+      toast({ type: "error", message: "Save failed — some operations may not have completed" });
+    }
+  }
 
   // ─── Data fetching ────────────────────────────────────
   const monthDateFrom = useMemo(() => fmtLocalDate(new Date(monthYear.year, monthYear.month, 1)), [monthYear]);
@@ -404,6 +458,7 @@ export default function SchedulesCalendarView() {
   }, [searchParams]);
 
   // ─── Mutations ────────────────────────────────────────
+
   const submitMutation = useSubmitSchedule();
   const confirmMutation = useConfirmSchedule();
   const rejectMutation = useRejectSchedule();
@@ -412,7 +467,7 @@ export default function SchedulesCalendarView() {
   const deleteMutation = useDeleteSchedule();
   const createMutation = useCreateSchedule();
   const updateMutation = useUpdateSchedule();
-  const swapMutation = useSwapSchedule();
+  const switchMutation = useSwitchSchedule();
 
   // ─── Derived helpers ──────────────────────────────────
 
@@ -547,8 +602,14 @@ export default function SchedulesCalendarView() {
         }
       } else {
         const hour = openHour + sortCol;
-        const aBlocks = schedules.filter((s) => s.user_id === a.id && s.work_date === selectedDay && matchesStoreFilter(s.store_id) && Math.floor(parseTimeToHours(s.start_time)) <= hour && Math.ceil(parseTimeToHours(s.end_time)) > hour);
-        const bBlocks = schedules.filter((s) => s.user_id === b.id && s.work_date === selectedDay && matchesStoreFilter(s.store_id) && Math.floor(parseTimeToHours(s.start_time)) <= hour && Math.ceil(parseTimeToHours(s.end_time)) > hour);
+        const matchHour = (s: Schedule) => {
+          const sH = Math.floor(parseTimeToHours(s.start_time));
+          const eH = Math.ceil(parseTimeToHours(s.end_time));
+          const effectiveEnd = eH <= sH ? eH + 24 : eH;
+          return sH <= hour && effectiveEnd > hour;
+        };
+        const aBlocks = schedules.filter((s) => s.user_id === a.id && s.work_date === selectedDay && matchesStoreFilter(s.store_id) && matchHour(s));
+        const bBlocks = schedules.filter((s) => s.user_id === b.id && s.work_date === selectedDay && matchesStoreFilter(s.store_id) && matchHour(s));
         aStatus = aBlocks.find((s) => s.status === "confirmed") ? "confirmed" : aBlocks.find((s) => s.status === "requested") ? "requested" : aBlocks.length > 0 ? "draft" : "none";
         bStatus = bBlocks.find((s) => s.status === "confirmed") ? "confirmed" : bBlocks.find((s) => s.status === "requested") ? "requested" : bBlocks.length > 0 ? "draft" : "none";
       }
@@ -601,7 +662,14 @@ export default function SchedulesCalendarView() {
   }, [openHour, closeHour]);
 
   const dailyColumns = useMemo(() => dailyHourRange.map((h) => {
-    const daySchedules = schedules.filter((s) => s.work_date === selectedDay && matchesStoreFilter(s.store_id) && Math.floor(parseTimeToHours(s.start_time)) <= h && Math.ceil(parseTimeToHours(s.end_time)) > h);
+    const daySchedules = schedules.filter((s) => {
+      if (s.work_date !== selectedDay || !matchesStoreFilter(s.store_id)) return false;
+      const sH = Math.floor(parseTimeToHours(s.start_time));
+      const eH = Math.ceil(parseTimeToHours(s.end_time));
+      // overnight: end <= start → treat end as end + 24
+      const effectiveEnd = eH <= sH ? eH + 24 : eH;
+      return sH <= h && effectiveEnd > h;
+    });
     const confirmed = daySchedules.filter((s) => s.status === "confirmed");
     const pending = daySchedules.filter((s) => s.status === "requested");
     // 시간당 1시간 컬럼 — stored only
@@ -704,13 +772,13 @@ export default function SchedulesCalendarView() {
       setHistoryScheduleId(blockId);
       setHistoryOpen(true);
     }
-    if (action === "swap") {
-      setSwapSourceId(blockId);
-      setSwapOpen(true);
+    if (action === "switch") {
+      setSwitchSourceId(blockId);
+      setSwitchOpen(true);
     }
-    if (action === "switch-staff") {
-      setSwitchStaffSourceId(blockId);
-      setSwitchStaffOpen(true);
+    if (action === "change-staff") {
+      setChangeStaffSourceId(blockId);
+      setChangeStaffOpen(true);
     }
     if (action === "details") router.push(`/schedules/${blockId}`);
     if (action === "edit") setEditModal({ open: true, mode: "edit", blockId });
@@ -844,6 +912,20 @@ export default function SchedulesCalendarView() {
 
   // ─── Render ───────────────────────────────────────────
 
+  // Bulk mode → 전용 컴포넌트로 전체 교체
+  if (bulkMode) {
+    return (
+      <BulkScheduleView
+        initialStoreId={primaryStoreId || stores[0]?.id || ""}
+        initialWeekStart={weekStart}
+        isGMView={isGMView}
+        isSaving={bulkSaving}
+        onSave={handleBulkSave}
+        onExit={() => setBulkMode(false)}
+      />
+    );
+  }
+
   return (
     <div className="min-h-screen bg-[var(--color-bg)] -m-4 md:-m-8">
       {/* Context Menu */}
@@ -854,11 +936,14 @@ export default function SchedulesCalendarView() {
         const stored = block?.hourly_rate ?? 0;
         // Sync 메뉴 노출 조건: GM 권한 + cascade rate 존재 + stored와 다름
         const canSync = isGMView && blockEffective != null && stored !== blockEffective;
+        const todayStr = new Date().toISOString().slice(0, 10);
+        const blockIsPast = !!block && block.work_date < todayStr;
         return (
           <ContextMenu
             anchorEl={contextMenu.anchorEl}
             status={contextMenu.status}
             userRole={isGMView ? "gm" : "sv"}
+            isPast={blockIsPast}
             canSyncRate={canSync}
             syncRateLabel={canSync ? `$${blockEffective}/hr` : undefined}
             onClose={() => setContextMenu(null)}
@@ -885,23 +970,25 @@ export default function SchedulesCalendarView() {
         })()}
       />
 
-      {/* Swap Modal */}
+      {/* Switch Schedule Modal */}
       {(() => {
-        const fromSchedule = swapSourceId ? schedules.find((s) => s.id === swapSourceId) : null;
+        const fromSchedule = switchSourceId ? schedules.find((s) => s.id === switchSourceId) : null;
         const fromUser = fromSchedule ? users.find((u) => u.id === fromSchedule.user_id) : null;
+        // 현재 선택된 매장들의 스케줄만 후보로 제공
+        const storeFiltered = schedules.filter((s) => matchesStoreFilter(s.store_id));
         return (
           <SwapModal
-            open={swapOpen}
-            onClose={() => { setSwapOpen(false); setSwapSourceId(null); }}
+            open={switchOpen}
+            onClose={() => { setSwitchOpen(false); setSwitchSourceId(null); }}
             fromSchedule={fromSchedule ?? null}
             fromUser={fromUser ?? null}
-            candidateSchedules={schedules}
+            candidateSchedules={storeFiltered}
             users={users}
-            isSubmitting={swapMutation.isPending}
+            isSubmitting={switchMutation.isPending}
             onSwap={(otherId, reason) => {
-              if (!swapSourceId) return;
-              swapMutation.mutate({ id: swapSourceId, other_schedule_id: otherId, reason }, {
-                onSuccess: () => { setSwapOpen(false); setSwapSourceId(null); },
+              if (!switchSourceId) return;
+              switchMutation.mutate({ id: switchSourceId, other_schedule_id: otherId, reason }, {
+                onSuccess: () => { setSwitchOpen(false); setSwitchSourceId(null); },
               });
             }}
           />
@@ -910,20 +997,20 @@ export default function SchedulesCalendarView() {
 
       {/* Switch Staff Modal */}
       {(() => {
-        const srcSchedule = switchStaffSourceId ? schedules.find((s) => s.id === switchStaffSourceId) : null;
+        const srcSchedule = changeStaffSourceId ? schedules.find((s) => s.id === changeStaffSourceId) : null;
         const srcUser = srcSchedule ? users.find((u) => u.id === srcSchedule.user_id) ?? null : null;
         return (
-          <SwitchStaffModal
-            open={switchStaffOpen}
-            onClose={() => { setSwitchStaffOpen(false); setSwitchStaffSourceId(null); }}
+          <ChangeStaffModal
+            open={changeStaffOpen}
+            onClose={() => { setChangeStaffOpen(false); setChangeStaffSourceId(null); }}
             schedule={srcSchedule ?? null}
             currentUser={srcUser}
             users={users}
             isSubmitting={updateMutation.isPending}
-            onSwitch={(newUserId) => {
-              if (!switchStaffSourceId) return;
-              updateMutation.mutate({ id: switchStaffSourceId, data: { user_id: newUserId } }, {
-                onSuccess: () => { setSwitchStaffOpen(false); setSwitchStaffSourceId(null); },
+            onChange={(newUserId) => {
+              if (!changeStaffSourceId) return;
+              updateMutation.mutate({ id: changeStaffSourceId, data: { user_id: newUserId } }, {
+                onSuccess: () => { setChangeStaffOpen(false); setChangeStaffSourceId(null); },
               });
             }}
           />
@@ -1003,6 +1090,7 @@ export default function SchedulesCalendarView() {
 
       {/* Legend Modal */}
       <LegendModal open={legendOpen} onClose={() => setLegendOpen(false)} />
+
 
       <div className="px-3 sm:px-4 lg:px-6 pb-4">
         {/* Row 1: Title + Stats */}
@@ -1112,9 +1200,19 @@ export default function SchedulesCalendarView() {
               </button>
             </div>
             {/* Actions */}
-            <button type="button" onClick={() => openAddModal()} className="bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] text-white px-3 sm:px-4 py-2 rounded-lg text-[12px] sm:text-[13px] font-semibold flex items-center gap-1.5 transition-colors shrink-0 whitespace-nowrap">
-              <span className="hidden sm:inline">+</span> Add
-              <span className="hidden md:inline"> Schedule</span>
+            {!bulkMode && (
+              <button type="button" onClick={() => openAddModal()} className="bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] text-white px-3 sm:px-4 py-2 rounded-lg text-[12px] sm:text-[13px] font-semibold flex items-center gap-1.5 transition-colors shrink-0 whitespace-nowrap">
+                <span className="hidden sm:inline">+</span> Add
+                <span className="hidden md:inline"> Schedule</span>
+              </button>
+            )}
+            {/* Bulk mode — available from any view, auto-switches to weekly */}
+            <button
+              type="button"
+              onClick={() => { setView("weekly"); setBulkMode(true); }}
+              className="px-3 sm:px-4 py-2 rounded-lg text-[12px] sm:text-[13px] font-semibold transition-colors shrink-0 whitespace-nowrap border bg-[var(--color-surface)] border-[var(--color-border)] text-[var(--color-text-secondary)] hover:text-[var(--color-text)]"
+            >
+              Bulk
             </button>
             <button
               type="button"
@@ -1145,7 +1243,7 @@ export default function SchedulesCalendarView() {
           <MonthlyGrid
             year={monthYear.year}
             month={monthYear.month}
-            schedules={schedules}
+            schedules={schedules.filter((s) => matchesStoreFilter(s.store_id))}
             shifts={shiftsQ.data ?? []}
             workRoles={monthlyWorkRolesQ.data ?? []}
             isSingleStore={isSingleStore}
@@ -1221,7 +1319,6 @@ export default function SchedulesCalendarView() {
                                       onClick={(e) => handleBlockClick(e, s)}
                                     />
                                   ))}
-                                  {/* 같은 날 추가 버튼 */}
                                   <button
                                     type="button"
                                     onClick={() => openAddModal(u.id, day.date)}
@@ -1232,20 +1329,20 @@ export default function SchedulesCalendarView() {
                                   </button>
                                 </div>
                               ) : (
-                                <div
-                                  className="h-full min-h-[44px] flex items-center justify-center opacity-0 hover:opacity-40 transition-opacity cursor-pointer"
-                                  role="button"
-                                  onClick={() => openAddModal(u.id, day.date)}
-                                  title={userEffective == null ? "Warning: this user has no hourly rate" : undefined}
-                                >
-                                  {userEffective == null ? (
-                                    <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-                                      <path d="M7 4v3m0 2.5h.01M2.5 11.5h9a1 1 0 00.87-1.5L8.37 3a1 1 0 00-1.74 0L2.63 10a1 1 0 00.87 1.5z" stroke="var(--color-warning)" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
-                                    </svg>
-                                  ) : (
-                                    <span className="text-[var(--color-text-muted)] text-[16px]">+</span>
-                                  )}
-                                </div>
+                                  <div
+                                    className="h-full min-h-[44px] flex items-center justify-center opacity-0 hover:opacity-40 transition-opacity cursor-pointer"
+                                    role="button"
+                                    onClick={() => openAddModal(u.id, day.date)}
+                                    title={userEffective == null ? "Warning: this user has no hourly rate" : undefined}
+                                  >
+                                    {userEffective == null ? (
+                                      <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                                        <path d="M7 4v3m0 2.5h.01M2.5 11.5h9a1 1 0 00.87-1.5L8.37 3a1 1 0 00-1.74 0L2.63 10a1 1 0 00.87 1.5z" stroke="var(--color-warning)" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+                                      </svg>
+                                    ) : (
+                                      <span className="text-[var(--color-text-muted)] text-[16px]">+</span>
+                                    )}
+                                  </div>
                               )}
                             </td>
                           );
