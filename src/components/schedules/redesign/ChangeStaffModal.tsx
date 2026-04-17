@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * SwitchStaffModal — 2-step: 직원 검색/선택 → 확인 프리뷰.
+ * ChangeStaffModal — 2-step: 직원 검색/선택 → 확인 프리뷰.
  */
 
 import { useState, useMemo } from "react";
@@ -13,7 +13,7 @@ interface Props {
   schedule: Schedule | null;
   currentUser: User | null;
   users: User[];
-  onSwitch: (newUserId: string) => void;
+  onChange: (newUserId: string) => void;
   isSubmitting?: boolean;
 }
 
@@ -26,7 +26,7 @@ function fmt(t: string | null): string {
   return `${hr}:${m} ${suf}`;
 }
 
-export function SwitchStaffModal({ open, onClose, schedule, currentUser, users, onSwitch, isSubmitting }: Props) {
+export function ChangeStaffModal({ open, onClose, schedule, currentUser, users, onChange, isSubmitting }: Props) {
   const [search, setSearch] = useState("");
   const [selectedUserId, setSelectedUserId] = useState("");
   const [step, setStep] = useState<"select" | "confirm">("select");
@@ -60,7 +60,7 @@ export function SwitchStaffModal({ open, onClose, schedule, currentUser, users, 
     <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/40" onClick={handleClose}>
       <div className="bg-[var(--color-surface)] rounded-2xl shadow-2xl w-full max-w-sm mx-4" onClick={(e) => e.stopPropagation()}>
         <div className="px-6 py-4 border-b border-[var(--color-border)]">
-          <h2 className="text-[16px] font-bold text-[var(--color-text)]">Switch Staff</h2>
+          <h2 className="text-[16px] font-bold text-[var(--color-text)]">Change Staff</h2>
           <div className="text-[12px] text-[var(--color-text-secondary)] mt-0.5">
             {schedule.work_date} · {time} · {schedule.work_role_name || "No role"}
           </div>
@@ -139,9 +139,9 @@ export function SwitchStaffModal({ open, onClose, schedule, currentUser, users, 
               <button
                 type="button"
                 disabled={isSubmitting}
-                onClick={() => onSwitch(selectedUserId)}
+                onClick={() => onChange(selectedUserId)}
                 className="px-4 py-2 rounded-lg text-[13px] font-semibold bg-[var(--color-accent)] text-white hover:bg-[var(--color-accent-hover)] disabled:opacity-50 disabled:cursor-not-allowed"
-              >{isSubmitting ? "Switching..." : "Confirm Switch"}</button>
+              >{"Confirm Change"}</button>
             </div>
           </>
         )}

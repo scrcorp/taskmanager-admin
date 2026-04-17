@@ -194,19 +194,19 @@ export const useCancelSchedule = (): UseMutationResult<Schedule, Error, { id: st
   });
 };
 
-export const useSwapSchedule = (): UseMutationResult<{ a: Schedule; b: Schedule }, Error, { id: string; other_schedule_id: string; reason?: string }> => {
+export const useSwitchSchedule = (): UseMutationResult<{ a: Schedule; b: Schedule }, Error, { id: string; other_schedule_id: string; reason?: string }> => {
   const qc = useQueryClient();
   const onErr = useErrorToast();
   return useMutation<{ a: Schedule; b: Schedule }, Error, { id: string; other_schedule_id: string; reason?: string }>({
     mutationFn: async ({ id, other_schedule_id, reason }) => {
       const res: AxiosResponse<{ a: Schedule; b: Schedule }> = await api.post(
-        `/admin/schedules/${id}/swap`,
+        `/admin/schedules/${id}/switch`,
         { other_schedule_id, reason: reason ?? null },
       );
       return res.data;
     },
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["schedules"] }); },
-    onError: onErr("Failed to swap schedules"),
+    onError: onErr("Failed to switch schedules"),
   });
 };
 

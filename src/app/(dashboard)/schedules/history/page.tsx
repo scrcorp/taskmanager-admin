@@ -28,7 +28,7 @@ const EVENT_TYPES = [
   { value: "rejected", label: "Rejected" },
   { value: "cancelled", label: "Cancelled" },
   { value: "reverted", label: "Reverted" },
-  { value: "swapped", label: "Swapped" },
+  { value: "switched", label: "Switched" },
   { value: "deleted", label: "Deleted" },
 ];
 
@@ -39,6 +39,7 @@ const eventColor: Record<string, string> = {
   rejected: "bg-[var(--color-danger-muted)] text-[var(--color-danger)]",
   cancelled: "bg-[var(--color-bg)] text-[var(--color-text-muted)]",
   reverted: "bg-[var(--color-bg)] text-[var(--color-text-secondary)]",
+  switched: "bg-[var(--color-accent-muted)] text-[var(--color-accent)]",
   swapped: "bg-[var(--color-accent-muted)] text-[var(--color-accent)]",
   deleted: "bg-[var(--color-danger-muted)] text-[var(--color-danger)]",
 };
@@ -74,7 +75,7 @@ function HistoryRow({ item, onDelete, users }: { item: ScheduleHistoryItem; onDe
           </span>
         </td>
         <td className="px-3 py-2.5 text-[12px]">
-          {item.event_type === "swapped" ? (
+          {(item.event_type === "switched" || item.event_type === "swapped") ? (
             <span className="text-[var(--color-text-muted)]">—</span>
           ) : (
             <>

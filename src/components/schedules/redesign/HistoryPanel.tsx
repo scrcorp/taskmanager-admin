@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { useScheduleAuditLog } from '@/hooks/useSchedules'
 
-type AuditEventType = 'created' | 'requested' | 'modified' | 'confirmed' | 'rejected' | 'cancelled' | 'reverted' | 'swapped' | 'deleted'
+type AuditEventType = 'created' | 'requested' | 'modified' | 'confirmed' | 'rejected' | 'cancelled' | 'reverted' | 'switched' | 'swapped' | 'deleted'
 
 interface Props {
   open: boolean
@@ -19,6 +19,7 @@ const typeColors: Record<AuditEventType, string> = {
   rejected: 'bg-[var(--color-danger)]',
   cancelled: 'bg-[var(--color-text-muted)]',
   reverted: 'bg-[var(--color-warning)]',
+  switched: 'bg-[var(--color-info)]',
   swapped: 'bg-[var(--color-info)]',
   deleted: 'bg-[var(--color-danger)]',
 }
@@ -31,7 +32,8 @@ const typeLabels: Record<AuditEventType, string> = {
   rejected: 'Rejected',
   cancelled: 'Cancelled',
   reverted: 'Reverted',
-  swapped: 'Swapped',
+  switched: 'Switched',
+  swapped: 'Switched',
   deleted: 'Deleted',
 }
 

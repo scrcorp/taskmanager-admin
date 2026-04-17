@@ -29,7 +29,7 @@ interface Props {
   onBack: () => void;
   /** undefined면 해당 action 버튼 숨김 (권한 없음) */
   onEdit?: () => void;
-  onSwap?: () => void;
+  onSwitch?: () => void;
   onConfirm?: () => void;
   onRevert?: () => void;
   onDelete?: () => void;
@@ -123,6 +123,7 @@ const eventColors: Record<string, string> = {
   rejected: "bg-[var(--color-danger)]",
   cancelled: "bg-[var(--color-text-muted)]",
   reverted: "bg-[var(--color-warning)]",
+  switched: "bg-[var(--color-info)]",
   swapped: "bg-[var(--color-info)]",
   deleted: "bg-[var(--color-danger)]",
 };
@@ -135,7 +136,8 @@ const eventLabels: Record<string, string> = {
   rejected: "Rejected",
   cancelled: "Cancelled",
   reverted: "Reverted",
-  swapped: "Swapped",
+  switched: "Switched",
+  swapped: "Switched",
   deleted: "Deleted",
 };
 
@@ -150,7 +152,7 @@ const attendanceMeta: Record<string, { label: string; bg: string; text: string; 
 
 // ─── Component ────────────────────────────────────────
 
-export function ScheduleDetailPage({ schedule, user, attendance, auditEvents, relatedSchedules, users, showCost, currentEffectiveRate, onSyncRate, isSyncingRate, onBack, onEdit, onSwap, onConfirm, onRevert, onDelete, onDeleteHistoryEntry }: Props) {
+export function ScheduleDetailPage({ schedule, user, attendance, auditEvents, relatedSchedules, users, showCost, currentEffectiveRate, onSyncRate, isSyncingRate, onBack, onEdit, onSwitch, onConfirm, onRevert, onDelete, onDeleteHistoryEntry }: Props) {
   const startH = parseTimeToHours(schedule.start_time);
   const endH = parseTimeToHours(schedule.end_time);
   const grossHours = Math.max(0, endH - startH);
@@ -478,7 +480,7 @@ export function ScheduleDetailPage({ schedule, user, attendance, auditEvents, re
         {/* Right column (1/3) */}
         <div className="space-y-4">
           {/* Quick actions — deleted schedule은 read-only */}
-          {!isDeleted && (onEdit || onConfirm || onSwap || onRevert || onDelete) && (
+          {!isDeleted && (onEdit || onConfirm || onSwitch || onRevert || onDelete) && (
           <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl p-5">
             <div className="text-[10px] font-semibold uppercase tracking-wider text-[var(--color-text-muted)] mb-3">Quick Actions</div>
             <div className="space-y-2">
@@ -500,13 +502,13 @@ export function ScheduleDetailPage({ schedule, user, attendance, auditEvents, re
                   Confirm
                 </button>
               )}
-              {isConfirmed && onSwap && (
+              {isConfirmed && onSwitch && (
                 <button
                   type="button"
-                  onClick={onSwap}
+                  onClick={onSwitch}
                   className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-[13px] font-semibold border border-[var(--color-border)] text-[var(--color-text)] hover:bg-[var(--color-surface-hover)]"
                 >
-                  Swap with...
+                  Switch Schedule
                 </button>
               )}
               {isConfirmed && onRevert && (

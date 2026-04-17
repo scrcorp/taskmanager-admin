@@ -96,8 +96,9 @@ function SwapScheduleCard({ info }: { info: SwapInfo }) {
 }
 
 export function DiffDisplay({ diff, users, reason, className = "" }: Props) {
-  const swapThis = diff._swap_this as SwapInfo | undefined;
-  const swapWith = diff._swap_with as SwapInfo | undefined;
+  // backward compat: old "swap" keys + new "switch" keys
+  const swapThis = (diff._switch_this ?? diff._swap_this) as SwapInfo | undefined;
+  const swapWith = (diff._switch_with ?? diff._swap_with) as SwapInfo | undefined;
   const isSwap = !!swapWith;
 
   const regularFields = isSwap

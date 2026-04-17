@@ -11,7 +11,7 @@ import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { useQueries } from "@tanstack/react-query";
 import api from "@/lib/api";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useSchedules, useConfirmSchedule, useRejectSchedule, useDeleteSchedule, useSubmitSchedule, useRevertSchedule, useCancelSchedule, useCreateSchedule, useUpdateSchedule, useSwapSchedule } from "@/hooks/useSchedules";
+import { useSchedules, useConfirmSchedule, useRejectSchedule, useDeleteSchedule, useSubmitSchedule, useRevertSchedule, useCancelSchedule, useCreateSchedule, useUpdateSchedule, useSwitchSchedule } from "@/hooks/useSchedules";
 import { useUsers } from "@/hooks/useUsers";
 import { ROLE_PRIORITY } from "@/lib/permissions";
 import { useStores } from "@/hooks/useStores";
@@ -25,7 +25,7 @@ import { StatsHeader } from "./StatsHeader";
 import { ContextMenu } from "./ContextMenu";
 import { HistoryPanel } from "./HistoryPanel";
 import { SwapModal } from "./SwapModal";
-import { SwitchStaffModal } from "./SwitchStaffModal";
+import { ChangeStaffModal } from "./ChangeStaffModal";
 import { ScheduleEditModal, type ScheduleEditPayload } from "./ScheduleEditModal";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { FilterBar, type FilterState } from "./FilterBar";
@@ -91,9 +91,11 @@ function parseTimeToHours(t: string | null): number {
   return (Number.parseInt(hh ?? "0", 10) || 0) + (Number.parseInt(mm ?? "0", 10) || 0) / 60;
 }
 
-/** 실제 근무시간 (break 제외). cost 계산에 사용. */
+/** 실제 근무시간 (break 제외). cost 계산에 사용. overnight 처리 포함. */
 function getNetWorkHours(s: Schedule): number {
-  const gross = Math.max(0, parseTimeToHours(s.end_time) - parseTimeToHours(s.start_time));
+  const startH = parseTimeToHours(s.start_time);
+  const endH = parseTimeToHours(s.end_time);
+  const gross = endH > startH ? endH - startH : (24 - startH + endH);
   if (s.break_start_time && s.break_end_time) {
     const breakHrs = Math.max(0, parseTimeToHours(s.break_end_time) - parseTimeToHours(s.break_start_time));
     return Math.max(0, gross - breakHrs);
@@ -108,10 +110,11 @@ function fmtH(h: number): string {
 }
 
 function formatHourLabel(h: number): string {
-  if (h === 0) return "12A";
-  if (h < 12) return `${h}A`;
-  if (h === 12) return "12P";
-  return `${h - 12}P`;
+  const hNorm = h % 24; // overnight hours (24, 25, ...) → (0, 1, ...)
+  if (hNorm === 0) return "12A";
+  if (hNorm < 12) return `${hNorm}A`;
+  if (hNorm === 12) return "12P";
+  return `${hNorm - 12}P`;
 }
 
 function rolePriorityToBadge(p: number): string {
@@ -292,10 +295,10 @@ export default function SchedulesCalendarView() {
   const [contextMenu, setContextMenu] = useState<{ anchorEl: HTMLElement; blockId: string; status: string } | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [historyScheduleId, setHistoryScheduleId] = useState<string | undefined>(undefined);
-  const [swapOpen, setSwapOpen] = useState(false);
-  const [swapSourceId, setSwapSourceId] = useState<string | null>(null);
-  const [switchStaffOpen, setSwitchStaffOpen] = useState(false);
-  const [switchStaffSourceId, setSwitchStaffSourceId] = useState<string | null>(null);
+  const [switchOpen, setSwitchOpen] = useState(false);
+  const [switchSourceId, setSwitchSourceId] = useState<string | null>(null);
+  const [changeStaffOpen, setChangeStaffOpen] = useState(false);
+  const [changeStaffSourceId, setChangeStaffSourceId] = useState<string | null>(null);
   const [editModal, setEditModal] = useState<{ open: boolean; mode: "add" | "edit"; blockId?: string; staffId?: string; date?: string; startTime?: string }>({ open: false, mode: "add" });
   const [confirmDialog, setConfirmDialog] = useState<{ open: boolean; type: "delete" | "revert" | "reject" | "cancel" | "confirm"; blockId?: string }>({ open: false, type: "delete" });
   const [filters, setFilters] = useState<FilterState>({ staffIds: [], roles: [], statuses: [], positions: [], shifts: [] });
@@ -464,7 +467,7 @@ export default function SchedulesCalendarView() {
   const deleteMutation = useDeleteSchedule();
   const createMutation = useCreateSchedule();
   const updateMutation = useUpdateSchedule();
-  const swapMutation = useSwapSchedule();
+  const switchMutation = useSwitchSchedule();
 
   // ─── Derived helpers ──────────────────────────────────
 
@@ -599,8 +602,14 @@ export default function SchedulesCalendarView() {
         }
       } else {
         const hour = openHour + sortCol;
-        const aBlocks = schedules.filter((s) => s.user_id === a.id && s.work_date === selectedDay && matchesStoreFilter(s.store_id) && Math.floor(parseTimeToHours(s.start_time)) <= hour && Math.ceil(parseTimeToHours(s.end_time)) > hour);
-        const bBlocks = schedules.filter((s) => s.user_id === b.id && s.work_date === selectedDay && matchesStoreFilter(s.store_id) && Math.floor(parseTimeToHours(s.start_time)) <= hour && Math.ceil(parseTimeToHours(s.end_time)) > hour);
+        const matchHour = (s: Schedule) => {
+          const sH = Math.floor(parseTimeToHours(s.start_time));
+          const eH = Math.ceil(parseTimeToHours(s.end_time));
+          const effectiveEnd = eH <= sH ? eH + 24 : eH;
+          return sH <= hour && effectiveEnd > hour;
+        };
+        const aBlocks = schedules.filter((s) => s.user_id === a.id && s.work_date === selectedDay && matchesStoreFilter(s.store_id) && matchHour(s));
+        const bBlocks = schedules.filter((s) => s.user_id === b.id && s.work_date === selectedDay && matchesStoreFilter(s.store_id) && matchHour(s));
         aStatus = aBlocks.find((s) => s.status === "confirmed") ? "confirmed" : aBlocks.find((s) => s.status === "requested") ? "requested" : aBlocks.length > 0 ? "draft" : "none";
         bStatus = bBlocks.find((s) => s.status === "confirmed") ? "confirmed" : bBlocks.find((s) => s.status === "requested") ? "requested" : bBlocks.length > 0 ? "draft" : "none";
       }
@@ -653,7 +662,14 @@ export default function SchedulesCalendarView() {
   }, [openHour, closeHour]);
 
   const dailyColumns = useMemo(() => dailyHourRange.map((h) => {
-    const daySchedules = schedules.filter((s) => s.work_date === selectedDay && matchesStoreFilter(s.store_id) && Math.floor(parseTimeToHours(s.start_time)) <= h && Math.ceil(parseTimeToHours(s.end_time)) > h);
+    const daySchedules = schedules.filter((s) => {
+      if (s.work_date !== selectedDay || !matchesStoreFilter(s.store_id)) return false;
+      const sH = Math.floor(parseTimeToHours(s.start_time));
+      const eH = Math.ceil(parseTimeToHours(s.end_time));
+      // overnight: end <= start → treat end as end + 24
+      const effectiveEnd = eH <= sH ? eH + 24 : eH;
+      return sH <= h && effectiveEnd > h;
+    });
     const confirmed = daySchedules.filter((s) => s.status === "confirmed");
     const pending = daySchedules.filter((s) => s.status === "requested");
     // 시간당 1시간 컬럼 — stored only
@@ -756,13 +772,13 @@ export default function SchedulesCalendarView() {
       setHistoryScheduleId(blockId);
       setHistoryOpen(true);
     }
-    if (action === "swap") {
-      setSwapSourceId(blockId);
-      setSwapOpen(true);
+    if (action === "switch") {
+      setSwitchSourceId(blockId);
+      setSwitchOpen(true);
     }
-    if (action === "switch-staff") {
-      setSwitchStaffSourceId(blockId);
-      setSwitchStaffOpen(true);
+    if (action === "change-staff") {
+      setChangeStaffSourceId(blockId);
+      setChangeStaffOpen(true);
     }
     if (action === "details") router.push(`/schedules/${blockId}`);
     if (action === "edit") setEditModal({ open: true, mode: "edit", blockId });
@@ -920,11 +936,14 @@ export default function SchedulesCalendarView() {
         const stored = block?.hourly_rate ?? 0;
         // Sync 메뉴 노출 조건: GM 권한 + cascade rate 존재 + stored와 다름
         const canSync = isGMView && blockEffective != null && stored !== blockEffective;
+        const todayStr = new Date().toISOString().slice(0, 10);
+        const blockIsPast = !!block && block.work_date < todayStr;
         return (
           <ContextMenu
             anchorEl={contextMenu.anchorEl}
             status={contextMenu.status}
             userRole={isGMView ? "gm" : "sv"}
+            isPast={blockIsPast}
             canSyncRate={canSync}
             syncRateLabel={canSync ? `$${blockEffective}/hr` : undefined}
             onClose={() => setContextMenu(null)}
@@ -951,23 +970,25 @@ export default function SchedulesCalendarView() {
         })()}
       />
 
-      {/* Swap Modal */}
+      {/* Switch Schedule Modal */}
       {(() => {
-        const fromSchedule = swapSourceId ? schedules.find((s) => s.id === swapSourceId) : null;
+        const fromSchedule = switchSourceId ? schedules.find((s) => s.id === switchSourceId) : null;
         const fromUser = fromSchedule ? users.find((u) => u.id === fromSchedule.user_id) : null;
+        // 현재 선택된 매장들의 스케줄만 후보로 제공
+        const storeFiltered = schedules.filter((s) => matchesStoreFilter(s.store_id));
         return (
           <SwapModal
-            open={swapOpen}
-            onClose={() => { setSwapOpen(false); setSwapSourceId(null); }}
+            open={switchOpen}
+            onClose={() => { setSwitchOpen(false); setSwitchSourceId(null); }}
             fromSchedule={fromSchedule ?? null}
             fromUser={fromUser ?? null}
-            candidateSchedules={schedules}
+            candidateSchedules={storeFiltered}
             users={users}
-            isSubmitting={swapMutation.isPending}
+            isSubmitting={switchMutation.isPending}
             onSwap={(otherId, reason) => {
-              if (!swapSourceId) return;
-              swapMutation.mutate({ id: swapSourceId, other_schedule_id: otherId, reason }, {
-                onSuccess: () => { setSwapOpen(false); setSwapSourceId(null); },
+              if (!switchSourceId) return;
+              switchMutation.mutate({ id: switchSourceId, other_schedule_id: otherId, reason }, {
+                onSuccess: () => { setSwitchOpen(false); setSwitchSourceId(null); },
               });
             }}
           />
@@ -976,20 +997,20 @@ export default function SchedulesCalendarView() {
 
       {/* Switch Staff Modal */}
       {(() => {
-        const srcSchedule = switchStaffSourceId ? schedules.find((s) => s.id === switchStaffSourceId) : null;
+        const srcSchedule = changeStaffSourceId ? schedules.find((s) => s.id === changeStaffSourceId) : null;
         const srcUser = srcSchedule ? users.find((u) => u.id === srcSchedule.user_id) ?? null : null;
         return (
-          <SwitchStaffModal
-            open={switchStaffOpen}
-            onClose={() => { setSwitchStaffOpen(false); setSwitchStaffSourceId(null); }}
+          <ChangeStaffModal
+            open={changeStaffOpen}
+            onClose={() => { setChangeStaffOpen(false); setChangeStaffSourceId(null); }}
             schedule={srcSchedule ?? null}
             currentUser={srcUser}
             users={users}
             isSubmitting={updateMutation.isPending}
-            onSwitch={(newUserId) => {
-              if (!switchStaffSourceId) return;
-              updateMutation.mutate({ id: switchStaffSourceId, data: { user_id: newUserId } }, {
-                onSuccess: () => { setSwitchStaffOpen(false); setSwitchStaffSourceId(null); },
+            onChange={(newUserId) => {
+              if (!changeStaffSourceId) return;
+              updateMutation.mutate({ id: changeStaffSourceId, data: { user_id: newUserId } }, {
+                onSuccess: () => { setChangeStaffOpen(false); setChangeStaffSourceId(null); },
               });
             }}
           />
@@ -1222,7 +1243,7 @@ export default function SchedulesCalendarView() {
           <MonthlyGrid
             year={monthYear.year}
             month={monthYear.month}
-            schedules={schedules}
+            schedules={schedules.filter((s) => matchesStoreFilter(s.store_id))}
             shifts={shiftsQ.data ?? []}
             workRoles={monthlyWorkRolesQ.data ?? []}
             isSingleStore={isSingleStore}

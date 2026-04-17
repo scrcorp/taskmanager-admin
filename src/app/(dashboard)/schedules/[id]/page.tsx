@@ -170,7 +170,7 @@ export default function SchedulesDetailPage() {
         // Edit: confirmed면 GM+ only (서버 정책), draft/requested는 SV 이상 모두 가능
         onEdit={schedule.status === "confirmed" ? (isGMPlus ? () => setEditOpen(true) : undefined) : () => setEditOpen(true)}
         // Swap: GM+ only
-        onSwap={isGMPlus && schedule.status === "confirmed" ? () => router.push(`/schedules?swap=${id}`) : undefined}
+        onSwitch={isGMPlus && schedule.status === "confirmed" ? () => router.push(`/schedules?switch=${id}`) : undefined}
         // Confirm: requested 상태에서만 (SV 가능)
         onConfirm={schedule.status === "requested" ? handleConfirmAction : undefined}
         // Revert: GM+ only, confirmed → requested

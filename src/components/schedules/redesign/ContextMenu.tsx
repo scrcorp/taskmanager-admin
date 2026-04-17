@@ -4,6 +4,7 @@ interface Props {
   anchorEl: HTMLElement
   status: string
   userRole?: 'owner' | 'gm' | 'sv' | 'staff'
+  isPast?: boolean
   canSyncRate?: boolean
   syncRateLabel?: string
   onClose: () => void
@@ -17,7 +18,7 @@ const GAP = 4
 const PAD = 8
 const ARROW_OFFSET_TOP = 16 // 기본 화살표 위치 (메뉴 상단에서)
 
-export function ContextMenu({ anchorEl, status, userRole = 'gm', canSyncRate = false, syncRateLabel, onClose, onAction }: Props) {
+export function ContextMenu({ anchorEl, status, userRole = 'gm', isPast = false, canSyncRate = false, syncRateLabel, onClose, onAction }: Props) {
   const menuRef = useRef<HTMLDivElement>(null)
   const [pos, setPos] = useState({ left: 0, top: 0, side: 'right' as 'right' | 'left', arrowTop: ARROW_OFFSET_TOP })
 
@@ -129,8 +130,8 @@ export function ContextMenu({ anchorEl, status, userRole = 'gm', canSyncRate = f
           { id: 'add', label: 'Add Schedule' },
           ...(syncItem ? [syncItem] : []),
           { id: 'revert', label: 'Revert to Requested' },
-          { id: 'switch-staff', label: 'Switch Staff' },
-          { id: 'swap', label: 'Swap with...' },
+          { id: 'change-staff', label: 'Change Staff' },
+          ...(!isPast ? [{ id: 'switch', label: 'Switch Schedule' }] : []),
           { id: 'cancel', label: 'Cancel...', danger: true },
           { id: 'history', label: 'View History' },
           { id: 'divider', label: '' },
