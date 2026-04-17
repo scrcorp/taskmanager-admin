@@ -16,6 +16,9 @@ import { useScheduleHistory, useDeleteScheduleHistoryEntry, type ScheduleHistory
 import { useStores } from "@/hooks/useStores";
 import { useUsers } from "@/hooks/useUsers";
 import { useAuthStore } from "@/stores/authStore";
+import { ROLE_PRIORITY } from "@/lib/permissions";
+import { DiffDisplay } from "@/components/schedules/redesign/DiffDisplay";
+import type { User } from "@/types";
 
 const EVENT_TYPES = [
   { value: "", label: "All events" },
@@ -25,7 +28,7 @@ const EVENT_TYPES = [
   { value: "rejected", label: "Rejected" },
   { value: "cancelled", label: "Cancelled" },
   { value: "reverted", label: "Reverted" },
-  { value: "swapped", label: "Swapped" },
+  { value: "switched", label: "Switched" },
   { value: "deleted", label: "Deleted" },
 ];
 
@@ -36,6 +39,7 @@ const eventColor: Record<string, string> = {
   rejected: "bg-[var(--color-danger-muted)] text-[var(--color-danger)]",
   cancelled: "bg-[var(--color-bg)] text-[var(--color-text-muted)]",
   reverted: "bg-[var(--color-bg)] text-[var(--color-text-secondary)]",
+  switched: "bg-[var(--color-accent-muted)] text-[var(--color-accent)]",
   swapped: "bg-[var(--color-accent-muted)] text-[var(--color-accent)]",
   deleted: "bg-[var(--color-danger-muted)] text-[var(--color-danger)]",
 };
@@ -51,15 +55,16 @@ function formatDateTime(iso: string): string {
   });
 }
 
-function HistoryRow({ item, onDelete }: { item: ScheduleHistoryItem; onDelete?: (id: string) => void }) {
+function HistoryRow({ item, onDelete, users }: { item: ScheduleHistoryItem; onDelete?: (id: string) => void; users?: User[] }) {
   const [expanded, setExpanded] = useState(false);
   const hasDiff = item.diff && Object.keys(item.diff).length > 0;
+  const hasDetails = hasDiff || !!item.reason;
   return (
     <>
       <tr
         className="border-b border-[var(--color-border)] hover:bg-[var(--color-surface-hover)] transition-colors group"
-        onClick={() => hasDiff && setExpanded((v) => !v)}
-        role={hasDiff ? "button" : undefined}
+        onClick={() => hasDetails && setExpanded((v) => !v)}
+        role={hasDetails ? "button" : undefined}
       >
         <td className="px-3 py-2.5 text-[11px] text-[var(--color-text-muted)] tabular-nums whitespace-nowrap">
           {formatDateTime(item.timestamp)}
@@ -70,17 +75,23 @@ function HistoryRow({ item, onDelete }: { item: ScheduleHistoryItem; onDelete?: 
           </span>
         </td>
         <td className="px-3 py-2.5 text-[12px]">
-          <Link
-            href={`/schedules/${item.schedule_id}`}
-            onClick={(e) => e.stopPropagation()}
-            className="text-[var(--color-accent)] hover:underline"
-          >
-            {item.work_date} · {item.user_name ?? "—"}
-          </Link>
-          <div className="text-[10px] text-[var(--color-text-muted)] mt-0.5">
-            {item.work_role_name ?? "—"} @ {item.store_name ?? "—"}
-            {item.start_time && item.end_time && ` · ${item.start_time}–${item.end_time}`}
-          </div>
+          {(item.event_type === "switched" || item.event_type === "swapped") ? (
+            <span className="text-[var(--color-text-muted)]">—</span>
+          ) : (
+            <>
+              <Link
+                href={`/schedules/${item.schedule_id}`}
+                onClick={(e) => e.stopPropagation()}
+                className="text-[var(--color-accent)] hover:underline"
+              >
+                {item.work_date} · {item.user_name ?? "—"}
+              </Link>
+              <div className="text-[10px] text-[var(--color-text-muted)] mt-0.5">
+                {item.work_role_name ?? "—"} @ {item.store_name ?? "—"}
+                {item.start_time && item.end_time && ` · ${item.start_time}–${item.end_time}`}
+              </div>
+            </>
+          )}
         </td>
         <td className="px-3 py-2.5 text-[12px] text-[var(--color-text-secondary)]">
           {item.actor_name ?? "system"}
@@ -90,9 +101,6 @@ function HistoryRow({ item, onDelete }: { item: ScheduleHistoryItem; onDelete?: 
         </td>
         <td className="px-3 py-2.5 text-[12px] text-[var(--color-text)]">
           {item.description ?? "—"}
-          {item.reason && (
-            <div className="text-[10px] text-[var(--color-text-muted)] mt-0.5 italic">"{item.reason}"</div>
-          )}
         </td>
         <td className="px-3 py-2.5 text-right">
           {onDelete && (
@@ -112,20 +120,13 @@ function HistoryRow({ item, onDelete }: { item: ScheduleHistoryItem; onDelete?: 
           )}
         </td>
       </tr>
-      {expanded && hasDiff && (
+      {expanded && hasDetails && (
         <tr className="bg-[var(--color-bg)] border-b border-[var(--color-border)]">
           <td colSpan={6} className="px-3 py-2.5">
-            <div className="text-[10px] font-semibold uppercase tracking-wider text-[var(--color-text-muted)] mb-1.5">Changes</div>
-            <div className="space-y-1">
-              {Object.entries(item.diff!).map(([field, val]) => (
-                <div key={field} className="text-[11px] tabular-nums flex items-center gap-2">
-                  <span className="font-mono text-[var(--color-text-secondary)]">{field}:</span>
-                  <span className="text-[var(--color-danger)] line-through">{String(val.old ?? "—")}</span>
-                  <span className="text-[var(--color-text-muted)]">→</span>
-                  <span className="text-[var(--color-success)] font-semibold">{String(val.new ?? "—")}</span>
-                </div>
-              ))}
-            </div>
+            {hasDiff && (
+              <div className="text-[10px] font-semibold uppercase tracking-wider text-[var(--color-text-muted)] mb-1.5">Changes</div>
+            )}
+            <DiffDisplay diff={item.diff ?? {}} users={users} reason={item.reason ?? undefined} />
           </td>
         </tr>
       )}
@@ -136,7 +137,7 @@ function HistoryRow({ item, onDelete }: { item: ScheduleHistoryItem; onDelete?: 
 export default function ScheduleHistoryPage() {
   const router = useRouter();
   const currentUser = useAuthStore((s) => s.user);
-  const isOwner = (currentUser?.role_priority ?? 99) <= 10;
+  const isOwner = (currentUser?.role_priority ?? 99) <= ROLE_PRIORITY.OWNER;
   const deleteHistoryMutation = useDeleteScheduleHistoryEntry();
 
   const today = new Date().toISOString().slice(0, 10);
@@ -347,6 +348,7 @@ export default function ScheduleHistoryPage() {
                   <HistoryRow
                     key={item.id}
                     item={item}
+                    users={usersQ.data ?? []}
                     onDelete={isOwner ? (id) => deleteHistoryMutation.mutate(id) : undefined}
                   />
                 ))}

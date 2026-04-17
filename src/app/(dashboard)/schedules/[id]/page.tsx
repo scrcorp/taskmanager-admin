@@ -13,6 +13,7 @@ import {
   useSchedule, useDeleteSchedule, useRevertSchedule, useCancelSchedule, useConfirmSchedule,
   useScheduleAuditLog, useSchedules, useUpdateSchedule, useDeleteScheduleHistoryEntry,
 } from "@/hooks/useSchedules";
+import { ROLE_PRIORITY } from "@/lib/permissions";
 import { useUser, useUsers } from "@/hooks/useUsers";
 import { useStore } from "@/hooks/useStores";
 import { useOrganization } from "@/hooks/useOrganization";
@@ -27,9 +28,9 @@ export default function SchedulesDetailPage() {
   // 로그인 사용자 role 기반 cost / action 권한
   const currentUser = useAuthStore((s) => s.user);
   const userPriority = currentUser?.role_priority ?? 99;
-  const showCost = userPriority <= 20;       // Owner/GM
-  const isGMPlus = userPriority <= 20;       // confirmed schedule modify/delete/revert/cancel/swap
-  const isOwner = userPriority <= 10;        // history entry 삭제
+  const showCost = userPriority <= ROLE_PRIORITY.GM;
+  const isGMPlus = userPriority <= ROLE_PRIORITY.GM;
+  const isOwner = userPriority <= ROLE_PRIORITY.OWNER;
 
   const scheduleQ = useSchedule(id);
   const userQ = useUser(scheduleQ.data?.user_id);
@@ -116,7 +117,7 @@ export default function SchedulesDetailPage() {
   })();
 
   // Sync stored rate → current effective (GM+ only)
-  const canSyncRate = showCost && currentEffectiveRate != null && (currentUser?.role_priority ?? 99) <= 20;
+  const canSyncRate = showCost && currentEffectiveRate != null && (currentUser?.role_priority ?? 99) <= ROLE_PRIORITY.GM;
   const handleSyncRate = canSyncRate
     ? () => {
         if (currentEffectiveRate == null) return;
@@ -160,6 +161,7 @@ export default function SchedulesDetailPage() {
         attendance={attendance}
         auditEvents={auditEvents}
         relatedSchedules={relatedSchedules}
+        users={usersQ.data ?? []}
         showCost={showCost}
         currentEffectiveRate={currentEffectiveRate}
         onSyncRate={handleSyncRate}
@@ -168,7 +170,7 @@ export default function SchedulesDetailPage() {
         // Edit: confirmed면 GM+ only (서버 정책), draft/requested는 SV 이상 모두 가능
         onEdit={schedule.status === "confirmed" ? (isGMPlus ? () => setEditOpen(true) : undefined) : () => setEditOpen(true)}
         // Swap: GM+ only
-        onSwap={isGMPlus && schedule.status === "confirmed" ? () => router.push(`/schedules?swap=${id}`) : undefined}
+        onSwitch={isGMPlus && schedule.status === "confirmed" ? () => router.push(`/schedules?switch=${id}`) : undefined}
         // Confirm: requested 상태에서만 (SV 가능)
         onConfirm={schedule.status === "requested" ? handleConfirmAction : undefined}
         // Revert: GM+ only, confirmed → requested

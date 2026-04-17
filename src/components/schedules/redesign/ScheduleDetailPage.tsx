@@ -8,7 +8,9 @@
  */
 
 import type { Schedule, User, Attendance } from "@/types";
+import { ROLE_PRIORITY } from "@/lib/permissions";
 import type { ScheduleAuditLogEntry } from "@/hooks/useSchedules";
+import { DiffDisplay } from "./DiffDisplay";
 
 interface Props {
   schedule: Schedule;
@@ -16,6 +18,8 @@ interface Props {
   attendance: Attendance | null;
   auditEvents: ScheduleAuditLogEntry[];
   relatedSchedules: Schedule[];
+  /** 유저 목록 (audit diff에서 UUID→이름 변환용) */
+  users?: User[];
   showCost: boolean;
   /** 현재 effective rate (cascade: user → store → org). 없으면 null. */
   currentEffectiveRate: number | null;
@@ -25,7 +29,7 @@ interface Props {
   onBack: () => void;
   /** undefined면 해당 action 버튼 숨김 (권한 없음) */
   onEdit?: () => void;
-  onSwap?: () => void;
+  onSwitch?: () => void;
   onConfirm?: () => void;
   onRevert?: () => void;
   onDelete?: () => void;
@@ -82,15 +86,15 @@ function formatEventTime(iso: string): string {
 }
 
 function rolePriorityToBadge(p: number): string {
-  if (p <= 10) return "Owner";
-  if (p <= 20) return "GM";
-  if (p <= 30) return "SV";
+  if (p <= ROLE_PRIORITY.OWNER) return "Owner";
+  if (p <= ROLE_PRIORITY.GM) return "GM";
+  if (p <= ROLE_PRIORITY.SV) return "SV";
   return "Staff";
 }
 
 function rolePriorityToColorClass(p: number): string {
-  if (p <= 20) return "bg-[var(--color-accent-muted)] text-[var(--color-accent)]";
-  if (p <= 30) return "bg-[var(--color-warning-muted)] text-[var(--color-warning)]";
+  if (p <= ROLE_PRIORITY.GM) return "bg-[var(--color-accent-muted)] text-[var(--color-accent)]";
+  if (p <= ROLE_PRIORITY.SV) return "bg-[var(--color-warning-muted)] text-[var(--color-warning)]";
   return "bg-[var(--color-success-muted)] text-[var(--color-success)]";
 }
 
@@ -119,6 +123,7 @@ const eventColors: Record<string, string> = {
   rejected: "bg-[var(--color-danger)]",
   cancelled: "bg-[var(--color-text-muted)]",
   reverted: "bg-[var(--color-warning)]",
+  switched: "bg-[var(--color-info)]",
   swapped: "bg-[var(--color-info)]",
   deleted: "bg-[var(--color-danger)]",
 };
@@ -131,7 +136,8 @@ const eventLabels: Record<string, string> = {
   rejected: "Rejected",
   cancelled: "Cancelled",
   reverted: "Reverted",
-  swapped: "Swapped",
+  switched: "Switched",
+  swapped: "Switched",
   deleted: "Deleted",
 };
 
@@ -146,7 +152,7 @@ const attendanceMeta: Record<string, { label: string; bg: string; text: string; 
 
 // ─── Component ────────────────────────────────────────
 
-export function ScheduleDetailPage({ schedule, user, attendance, auditEvents, relatedSchedules, showCost, currentEffectiveRate, onSyncRate, isSyncingRate, onBack, onEdit, onSwap, onConfirm, onRevert, onDelete, onDeleteHistoryEntry }: Props) {
+export function ScheduleDetailPage({ schedule, user, attendance, auditEvents, relatedSchedules, users, showCost, currentEffectiveRate, onSyncRate, isSyncingRate, onBack, onEdit, onSwitch, onConfirm, onRevert, onDelete, onDeleteHistoryEntry }: Props) {
   const startH = parseTimeToHours(schedule.start_time);
   const endH = parseTimeToHours(schedule.end_time);
   const grossHours = Math.max(0, endH - startH);
@@ -219,7 +225,7 @@ export function ScheduleDetailPage({ schedule, user, attendance, auditEvents, re
               <div className="min-w-0 flex-1">
                 <div className="text-[16px] font-bold text-[var(--color-text)]">{user.full_name || user.username}</div>
                 <div className="flex items-center gap-2 text-[12px] mt-1">
-                  <span className={`font-semibold ${user.role_priority <= 20 ? "text-[var(--color-accent)]" : user.role_priority <= 30 ? "text-[var(--color-warning)]" : "text-[var(--color-text-muted)]"}`}>
+                  <span className={`font-semibold ${user.role_priority <= ROLE_PRIORITY.GM ? "text-[var(--color-accent)]" : user.role_priority <= ROLE_PRIORITY.SV ? "text-[var(--color-warning)]" : "text-[var(--color-text-muted)]"}`}>
                     {userRoleBadge}
                   </span>
                   {showCost && user.hourly_rate && (
@@ -452,27 +458,16 @@ export function ScheduleDetailPage({ schedule, user, attendance, auditEvents, re
                       )}
                     </div>
                     {e.description && <div className="text-[12px] text-[var(--color-text-secondary)] mt-0.5">{e.description}</div>}
-                    {e.diff && Object.keys(e.diff).length > 0 && (
+                    {((e.diff && Object.keys(e.diff).length > 0) || e.reason) && (
                       <div className="mt-1.5 px-2.5 py-1.5 bg-[var(--color-bg)] border-l-2 border-[var(--color-accent)] rounded-r text-[11px]">
-                        <div className="font-semibold text-[var(--color-text-muted)] uppercase tracking-wider text-[10px] mb-1">Changes</div>
-                        <div className="space-y-0.5">
-                          {Object.entries(e.diff).map(([field, change]) => {
-                            const d = change as { old?: unknown; new?: unknown };
-                            return (
-                              <div key={field} className="flex items-baseline gap-2">
-                                <span className="font-semibold text-[var(--color-text)] min-w-[90px]">{field}</span>
-                                <span className="text-[var(--color-text-muted)] line-through">{String(d.old ?? "—")}</span>
-                                <span className="text-[var(--color-text-muted)]">→</span>
-                                <span className="text-[var(--color-text)] font-medium">{String(d.new ?? "—")}</span>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    )}
-                    {e.reason && (
-                      <div className="mt-1.5 px-2.5 py-1.5 bg-[var(--color-bg)] border-l-2 border-[var(--color-danger)] rounded-r text-[11px] text-[var(--color-text-secondary)]">
-                        <span className="font-semibold text-[var(--color-text)]">Reason:</span> {e.reason}
+                        {e.diff && Object.keys(e.diff).length > 0 && (
+                          <div className="font-semibold text-[var(--color-text-muted)] uppercase tracking-wider text-[10px] mb-1">Changes</div>
+                        )}
+                        <DiffDisplay
+                          diff={(e.diff ?? {}) as Record<string, { old?: unknown; new?: unknown; old_name?: string; new_name?: string }>}
+                          users={users}
+                          reason={e.reason ?? undefined}
+                        />
                       </div>
                     )}
                   </div>
@@ -485,7 +480,7 @@ export function ScheduleDetailPage({ schedule, user, attendance, auditEvents, re
         {/* Right column (1/3) */}
         <div className="space-y-4">
           {/* Quick actions — deleted schedule은 read-only */}
-          {!isDeleted && (onEdit || onConfirm || onSwap || onRevert || onDelete) && (
+          {!isDeleted && (onEdit || onConfirm || onSwitch || onRevert || onDelete) && (
           <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl p-5">
             <div className="text-[10px] font-semibold uppercase tracking-wider text-[var(--color-text-muted)] mb-3">Quick Actions</div>
             <div className="space-y-2">
@@ -507,13 +502,13 @@ export function ScheduleDetailPage({ schedule, user, attendance, auditEvents, re
                   Confirm
                 </button>
               )}
-              {isConfirmed && onSwap && (
+              {isConfirmed && onSwitch && (
                 <button
                   type="button"
-                  onClick={onSwap}
+                  onClick={onSwitch}
                   className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-[13px] font-semibold border border-[var(--color-border)] text-[var(--color-text)] hover:bg-[var(--color-surface-hover)]"
                 >
-                  Swap with...
+                  Switch Schedule
                 </button>
               )}
               {isConfirmed && onRevert && (

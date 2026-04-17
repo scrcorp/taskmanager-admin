@@ -11,8 +11,9 @@ import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { useQueries } from "@tanstack/react-query";
 import api from "@/lib/api";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useSchedules, useConfirmSchedule, useRejectSchedule, useDeleteSchedule, useSubmitSchedule, useRevertSchedule, useCancelSchedule, useCreateSchedule, useUpdateSchedule, useSwapSchedule } from "@/hooks/useSchedules";
+import { useSchedules, useConfirmSchedule, useRejectSchedule, useDeleteSchedule, useSubmitSchedule, useRevertSchedule, useCancelSchedule, useCreateSchedule, useUpdateSchedule, useSwitchSchedule } from "@/hooks/useSchedules";
 import { useUsers } from "@/hooks/useUsers";
+import { ROLE_PRIORITY } from "@/lib/permissions";
 import { useStores } from "@/hooks/useStores";
 import { useOrganization } from "@/hooks/useOrganization";
 import { useAttendances } from "@/hooks/useAttendances";
@@ -24,12 +25,19 @@ import { StatsHeader } from "./StatsHeader";
 import { ContextMenu } from "./ContextMenu";
 import { HistoryPanel } from "./HistoryPanel";
 import { SwapModal } from "./SwapModal";
+import { ChangeStaffModal } from "./ChangeStaffModal";
 import { ScheduleEditModal, type ScheduleEditPayload } from "./ScheduleEditModal";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { FilterBar, type FilterState } from "./FilterBar";
 import { LegendModal } from "./LegendModal";
+import { MonthlyGrid } from "./MonthlyGrid";
+import { useShifts } from "@/hooks/useShifts";
+import { useWorkRoles } from "@/hooks/useWorkRoles";
+import { useBulkCreateSchedules, useBulkUpdateSchedules, useBulkDeleteSchedules } from "@/hooks/useSchedules";
+import BulkScheduleView, { type SavePayload } from "./BulkScheduleView";
+import { useToast } from "@/components/ui/Toast";
 
-type ViewMode = "weekly" | "daily";
+type ViewMode = "weekly" | "daily" | "monthly";
 type SortState = "none" | "confirmed" | "requested";
 
 // ─── Date utilities ──────────────────────────────────────
@@ -83,9 +91,11 @@ function parseTimeToHours(t: string | null): number {
   return (Number.parseInt(hh ?? "0", 10) || 0) + (Number.parseInt(mm ?? "0", 10) || 0) / 60;
 }
 
-/** 실제 근무시간 (break 제외). cost 계산에 사용. */
+/** 실제 근무시간 (break 제외). cost 계산에 사용. overnight 처리 포함. */
 function getNetWorkHours(s: Schedule): number {
-  const gross = Math.max(0, parseTimeToHours(s.end_time) - parseTimeToHours(s.start_time));
+  const startH = parseTimeToHours(s.start_time);
+  const endH = parseTimeToHours(s.end_time);
+  const gross = endH > startH ? endH - startH : (24 - startH + endH);
   if (s.break_start_time && s.break_end_time) {
     const breakHrs = Math.max(0, parseTimeToHours(s.break_end_time) - parseTimeToHours(s.break_start_time));
     return Math.max(0, gross - breakHrs);
@@ -100,23 +110,24 @@ function fmtH(h: number): string {
 }
 
 function formatHourLabel(h: number): string {
-  if (h === 0) return "12A";
-  if (h < 12) return `${h}A`;
-  if (h === 12) return "12P";
-  return `${h - 12}P`;
+  const hNorm = h % 24; // overnight hours (24, 25, ...) → (0, 1, ...)
+  if (hNorm === 0) return "12A";
+  if (hNorm < 12) return `${hNorm}A`;
+  if (hNorm === 12) return "12P";
+  return `${hNorm - 12}P`;
 }
 
 function rolePriorityToBadge(p: number): string {
-  if (p <= 10) return "Owner";
-  if (p <= 20) return "GM";
-  if (p <= 30) return "SV";
+  if (p <= ROLE_PRIORITY.OWNER) return "Owner";
+  if (p <= ROLE_PRIORITY.GM) return "GM";
+  if (p <= ROLE_PRIORITY.SV) return "SV";
   return "Staff";
 }
 
 function rolePriorityToColor(p: number): string {
-  if (p <= 10) return "bg-[var(--color-accent-muted)] text-[var(--color-accent)]";
-  if (p <= 20) return "bg-[var(--color-accent-muted)] text-[var(--color-accent)]";
-  if (p <= 30) return "bg-[var(--color-warning-muted)] text-[var(--color-warning)]";
+  if (p <= ROLE_PRIORITY.OWNER) return "bg-[var(--color-accent-muted)] text-[var(--color-accent)]";
+  if (p <= ROLE_PRIORITY.GM) return "bg-[var(--color-accent-muted)] text-[var(--color-accent)]";
+  if (p <= ROLE_PRIORITY.SV) return "bg-[var(--color-warning-muted)] text-[var(--color-warning)]";
   return "bg-[var(--color-success-muted)] text-[var(--color-success)]";
 }
 
@@ -243,7 +254,8 @@ export default function SchedulesCalendarView() {
 
   // URL 기반 state 초기화 — back nav 시 자동 복원
   // ?view=weekly|daily&week=YYYY-MM-DD&day=YYYY-MM-DD&store=<id>
-  const initView: ViewMode = searchParams.get("view") === "daily" ? "daily" : "weekly";
+  const initViewParam = searchParams.get("view");
+  const initView: ViewMode = initViewParam === "daily" ? "daily" : initViewParam === "monthly" ? "monthly" : "weekly";
   const initWeekStart: Date = (() => {
     const w = searchParams.get("week");
     if (w) {
@@ -258,10 +270,15 @@ export default function SchedulesCalendarView() {
   const [weekStart, setWeekStart] = useState<Date>(initWeekStart);
   const weekDates = useMemo(() => buildWeekDates(weekStart), [weekStart]);
   const [selectedDay, setSelectedDay] = useState(initSelectedDay);
+  // Monthly
+  const [monthYear, setMonthYear] = useState(() => {
+    const now = new Date();
+    return { year: now.getFullYear(), month: now.getMonth() };
+  });
   // 현재 로그인 사용자의 role 기반으로 cost/actions 표시 여부 결정
   // Owner(10) / GM(20) 만 cost 정보 표시, SV(30) / Staff(40) 는 숨김
   const currentUser = useAuthStore((s) => s.user);
-  const isGMView = (currentUser?.role_priority ?? 99) <= 20;
+  const isGMView = (currentUser?.role_priority ?? 99) <= ROLE_PRIORITY.GM;
   const [weeklySortCol, setWeeklySortCol] = useState(-1);
   const [weeklySortState, setWeeklySortState] = useState<SortState>("none");
   const [dailySortCol, setDailySortCol] = useState(-1);
@@ -275,19 +292,71 @@ export default function SchedulesCalendarView() {
   const matchesStoreFilter = (storeId: string) => isAllStores || selectedStoreSet.has(storeId);
   // backward compat alias
   const selectedStore = primaryStoreId;
-  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; blockId: string; status: string } | null>(null);
+  const [contextMenu, setContextMenu] = useState<{ anchorEl: HTMLElement; blockId: string; status: string } | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [historyScheduleId, setHistoryScheduleId] = useState<string | undefined>(undefined);
-  const [swapOpen, setSwapOpen] = useState(false);
-  const [swapSourceId, setSwapSourceId] = useState<string | null>(null);
+  const [switchOpen, setSwitchOpen] = useState(false);
+  const [switchSourceId, setSwitchSourceId] = useState<string | null>(null);
+  const [changeStaffOpen, setChangeStaffOpen] = useState(false);
+  const [changeStaffSourceId, setChangeStaffSourceId] = useState<string | null>(null);
   const [editModal, setEditModal] = useState<{ open: boolean; mode: "add" | "edit"; blockId?: string; staffId?: string; date?: string; startTime?: string }>({ open: false, mode: "add" });
   const [confirmDialog, setConfirmDialog] = useState<{ open: boolean; type: "delete" | "revert" | "reject" | "cancel" | "confirm"; blockId?: string }>({ open: false, type: "delete" });
   const [filters, setFilters] = useState<FilterState>({ staffIds: [], roles: [], statuses: [], positions: [], shifts: [] });
   const [legendOpen, setLegendOpen] = useState(false);
 
+  // ─── Bulk mode ─────────────────────────────────────
+  const [bulkMode, setBulkMode] = useState(false);
+  const { toast } = useToast();
+  const bulkCreateMutation = useBulkCreateSchedules();
+  const bulkUpdateMutation = useBulkUpdateSchedules();
+  const bulkDeleteMutation = useBulkDeleteSchedules();
+  const bulkSaving = bulkCreateMutation.isPending || bulkUpdateMutation.isPending || bulkDeleteMutation.isPending;
+
+  async function handleBulkSave(payload: SavePayload) {
+    try {
+      // 1. Creates
+      if (payload.creates.length > 0) {
+        const creates = payload.creates.map((e) => ({
+          user_id: e.userId,
+          store_id: e.storeId,
+          work_role_id: e.workRoleId,
+          work_date: e.workDate,
+          start_time: e.startTime,
+          end_time: e.endTime,
+          break_start_time: e.breakStartTime,
+          break_end_time: e.breakEndTime,
+          status: (isGMView ? "confirmed" : "requested") as "confirmed" | "requested",
+        }));
+        await bulkCreateMutation.mutateAsync({ entries: creates, skip_on_conflict: true });
+      }
+      // 2. Updates
+      if (payload.updates.length > 0) {
+        const updates = payload.updates.map((u) => ({
+          id: u.id,
+          work_role_id: u.data.workRoleId,
+          start_time: u.data.startTime,
+          end_time: u.data.endTime,
+          break_start_time: u.data.breakStartTime,
+          break_end_time: u.data.breakEndTime,
+        }));
+        await bulkUpdateMutation.mutateAsync({ updates });
+      }
+      // 3. Deletes
+      if (payload.deletes.length > 0) {
+        await bulkDeleteMutation.mutateAsync({ ids: payload.deletes });
+      }
+      toast({ type: "success", message: `Saved: ${payload.creates.length} created, ${payload.updates.length} updated, ${payload.deletes.length} deleted` });
+      setBulkMode(false);
+    } catch {
+      toast({ type: "error", message: "Save failed — some operations may not have completed" });
+    }
+  }
+
   // ─── Data fetching ────────────────────────────────────
-  const dateFrom = weekDates[0]?.date;
-  const dateTo = weekDates[6]?.date;
+  const monthDateFrom = useMemo(() => fmtLocalDate(new Date(monthYear.year, monthYear.month, 1)), [monthYear]);
+  const monthDateTo = useMemo(() => fmtLocalDate(new Date(monthYear.year, monthYear.month + 1, 0)), [monthYear]);
+  const dateFrom = view === "monthly" ? monthDateFrom : weekDates[0]?.date;
+  const dateTo = view === "monthly" ? monthDateTo : weekDates[6]?.date;
   // 스토어 선택 시 해당 스토어에 배정된(user_stores) 직원만 서버에서 필터링
   const userFilters = useMemo(
     () => (!isAllStores && selectedStores.length > 0 ? { store_ids: selectedStores } : undefined),
@@ -304,7 +373,7 @@ export default function SchedulesCalendarView() {
     user_ids: allUserIds,
     date_from: dateFrom,
     date_to: dateTo,
-    per_page: 500,
+    per_page: view === "monthly" ? 2000 : 500,
   });
   const attendancesQ = useAttendances({
     store_id: selectedStore || undefined,
@@ -317,6 +386,11 @@ export default function SchedulesCalendarView() {
   const stores = storesQ.data ?? [];
   const schedules: Schedule[] = schedulesQ.data?.items ?? [];
   const attendances = attendancesQ.data?.items ?? [];
+
+  // Monthly용 shifts + workRoles (단일 store 선택 시)
+  const isSingleStore = selectedStores.length === 1;
+  const shiftsQ = useShifts(isSingleStore ? selectedStores[0] : undefined);
+  const monthlyWorkRolesQ = useWorkRoles(isSingleStore ? selectedStores[0] : undefined);
 
   // 첫 store 자동 선택 (URL store 파라미터가 있으면 우선)
   useEffect(() => {
@@ -341,12 +415,18 @@ export default function SchedulesCalendarView() {
     if (typeof window === "undefined") return;
     const params = new URLSearchParams(window.location.search);
     params.set("view", view);
-    if (view === "weekly") {
+    if (view === "monthly") {
+      params.set("month", `${monthYear.year}-${String(monthYear.month + 1).padStart(2, "0")}`);
+      params.delete("week");
+      params.delete("day");
+    } else if (view === "weekly") {
       params.set("week", weekDates[0]?.date ?? "");
       params.delete("day");
+      params.delete("month");
     } else {
       params.set("day", selectedDay);
       params.delete("week");
+      params.delete("month");
     }
     params.set("store", isAllStores ? "all" : selectedStores.join(","));
     const next = `${window.location.pathname}?${params.toString()}`;
@@ -354,7 +434,7 @@ export default function SchedulesCalendarView() {
       window.history.replaceState(null, "", next);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [view, weekStart, selectedDay, selectedStores, isAllStores]);
+  }, [view, weekStart, selectedDay, selectedStores, isAllStores, monthYear]);
 
   // selectedDay가 현재 weekDates 밖으로 나가면 weekStart 자동 동기화
   useEffect(() => {
@@ -378,6 +458,7 @@ export default function SchedulesCalendarView() {
   }, [searchParams]);
 
   // ─── Mutations ────────────────────────────────────────
+
   const submitMutation = useSubmitSchedule();
   const confirmMutation = useConfirmSchedule();
   const rejectMutation = useRejectSchedule();
@@ -386,7 +467,7 @@ export default function SchedulesCalendarView() {
   const deleteMutation = useDeleteSchedule();
   const createMutation = useCreateSchedule();
   const updateMutation = useUpdateSchedule();
-  const swapMutation = useSwapSchedule();
+  const switchMutation = useSwitchSchedule();
 
   // ─── Derived helpers ──────────────────────────────────
 
@@ -521,8 +602,14 @@ export default function SchedulesCalendarView() {
         }
       } else {
         const hour = openHour + sortCol;
-        const aBlocks = schedules.filter((s) => s.user_id === a.id && s.work_date === selectedDay && matchesStoreFilter(s.store_id) && Math.floor(parseTimeToHours(s.start_time)) <= hour && Math.ceil(parseTimeToHours(s.end_time)) > hour);
-        const bBlocks = schedules.filter((s) => s.user_id === b.id && s.work_date === selectedDay && matchesStoreFilter(s.store_id) && Math.floor(parseTimeToHours(s.start_time)) <= hour && Math.ceil(parseTimeToHours(s.end_time)) > hour);
+        const matchHour = (s: Schedule) => {
+          const sH = Math.floor(parseTimeToHours(s.start_time));
+          const eH = Math.ceil(parseTimeToHours(s.end_time));
+          const effectiveEnd = eH <= sH ? eH + 24 : eH;
+          return sH <= hour && effectiveEnd > hour;
+        };
+        const aBlocks = schedules.filter((s) => s.user_id === a.id && s.work_date === selectedDay && matchesStoreFilter(s.store_id) && matchHour(s));
+        const bBlocks = schedules.filter((s) => s.user_id === b.id && s.work_date === selectedDay && matchesStoreFilter(s.store_id) && matchHour(s));
         aStatus = aBlocks.find((s) => s.status === "confirmed") ? "confirmed" : aBlocks.find((s) => s.status === "requested") ? "requested" : aBlocks.length > 0 ? "draft" : "none";
         bStatus = bBlocks.find((s) => s.status === "confirmed") ? "confirmed" : bBlocks.find((s) => s.status === "requested") ? "requested" : bBlocks.length > 0 ? "draft" : "none";
       }
@@ -548,12 +635,14 @@ export default function SchedulesCalendarView() {
     const sumHours = (arr: Schedule[]) => arr.reduce((sum, s) => sum + getNetWorkHours(s), 0);
     // stored rate만 합산. NULL은 0으로 (No cost로 표시되는 schedule들은 합계에서 빠짐).
     const sumCost = (arr: Schedule[]) => arr.reduce((sum, s) => sum + getNetWorkHours(s) * (s.hourly_rate ?? 0), 0);
+    const todayStr = new Date().toISOString().slice(0, 10);
     return {
       key: day.date,
       label: day.dayName,
       sublabel: day.dayNum,
       isSunday: day.isSunday,
       isSaturday: day.isWeekend && !day.isSunday,
+      isNow: day.date === todayStr,
       teamConfirmed: new Set(confirmed.map((s) => s.user_id)).size,
       teamPending: new Set(pending.map((s) => s.user_id)).size,
       hoursConfirmed: sumHours(confirmed),
@@ -573,7 +662,14 @@ export default function SchedulesCalendarView() {
   }, [openHour, closeHour]);
 
   const dailyColumns = useMemo(() => dailyHourRange.map((h) => {
-    const daySchedules = schedules.filter((s) => s.work_date === selectedDay && matchesStoreFilter(s.store_id) && Math.floor(parseTimeToHours(s.start_time)) <= h && Math.ceil(parseTimeToHours(s.end_time)) > h);
+    const daySchedules = schedules.filter((s) => {
+      if (s.work_date !== selectedDay || !matchesStoreFilter(s.store_id)) return false;
+      const sH = Math.floor(parseTimeToHours(s.start_time));
+      const eH = Math.ceil(parseTimeToHours(s.end_time));
+      // overnight: end <= start → treat end as end + 24
+      const effectiveEnd = eH <= sH ? eH + 24 : eH;
+      return sH <= h && effectiveEnd > h;
+    });
     const confirmed = daySchedules.filter((s) => s.status === "confirmed");
     const pending = daySchedules.filter((s) => s.status === "requested");
     // 시간당 1시간 컬럼 — stored only
@@ -623,7 +719,21 @@ export default function SchedulesCalendarView() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [schedules, selectedDay, selectedStores, isAllStores, users]);
 
-  const totals = view === "weekly" ? weeklyTotals : dailyTotals;
+  const monthlyTotals = useMemo(() => {
+    const filtered = schedules.filter((s) => s.work_date >= monthDateFrom && s.work_date <= monthDateTo && matchesStoreFilter(s.store_id));
+    const conf = filtered.filter((s) => s.status === "confirmed");
+    const pend = filtered.filter((s) => s.status === "requested");
+    const sumHours = (arr: Schedule[]) => arr.reduce((sum, s) => sum + getNetWorkHours(s), 0);
+    const sumCost = (arr: Schedule[]) => arr.reduce((sum, s) => sum + getNetWorkHours(s) * (s.hourly_rate ?? 0), 0);
+    return {
+      hc: sumHours(conf), hp: sumHours(pend),
+      lc: sumCost(conf), lp: sumCost(pend),
+      tc: new Set(conf.map((s) => s.user_id)).size,
+      tp: new Set(pend.map((s) => s.user_id)).size,
+    };
+  }, [schedules, monthDateFrom, monthDateTo, selectedStores, isAllStores]);
+
+  const totals = view === "monthly" ? monthlyTotals : view === "weekly" ? weeklyTotals : dailyTotals;
   const columns = view === "weekly" ? weeklyColumns : dailyColumns;
   // selectedDay 직접 파싱 — weekDates lookup은 selectedDay가 weekDates 밖이면 undefined가 됨
   const selectedDayLabel = (() => {
@@ -652,7 +762,7 @@ export default function SchedulesCalendarView() {
   function handleBlockClick(e: React.MouseEvent, sched: Schedule) {
     e.preventDefault();
     e.stopPropagation();
-    setContextMenu({ x: e.clientX, y: e.clientY, blockId: sched.id, status: sched.status });
+    setContextMenu({ anchorEl: e.currentTarget as HTMLElement, blockId: sched.id, status: sched.status });
   }
 
   function handleContextAction(action: string) {
@@ -662,9 +772,13 @@ export default function SchedulesCalendarView() {
       setHistoryScheduleId(blockId);
       setHistoryOpen(true);
     }
-    if (action === "swap") {
-      setSwapSourceId(blockId);
-      setSwapOpen(true);
+    if (action === "switch") {
+      setSwitchSourceId(blockId);
+      setSwitchOpen(true);
+    }
+    if (action === "change-staff") {
+      setChangeStaffSourceId(blockId);
+      setChangeStaffOpen(true);
     }
     if (action === "details") router.push(`/schedules/${blockId}`);
     if (action === "edit") setEditModal({ open: true, mode: "edit", blockId });
@@ -719,6 +833,9 @@ export default function SchedulesCalendarView() {
         onSuccess: closeEditModal,
       });
     } else if (editModal.mode === "edit" && editModal.blockId) {
+      const orig = schedules.find((s) => s.id === editModal.blockId);
+      const userChanged = orig && payload.userId !== orig.user_id;
+      const rateUntouched = orig && payload.hourlyRate === orig.hourly_rate;
       updateMutation.mutate({
         id: editModal.blockId,
         data: {
@@ -730,7 +847,8 @@ export default function SchedulesCalendarView() {
           break_start_time: payload.breakStartTime,
           break_end_time: payload.breakEndTime,
           note: payload.notes || null,
-          hourly_rate: payload.hourlyRate,
+          // user 변경 + rate 미수정 → null로 보내서 백엔드가 새 user 기준 재계산
+          hourly_rate: (userChanged && rateUntouched) ? null : payload.hourlyRate,
         },
       }, {
         onSuccess: closeEditModal,
@@ -794,8 +912,22 @@ export default function SchedulesCalendarView() {
 
   // ─── Render ───────────────────────────────────────────
 
+  // Bulk mode → 전용 컴포넌트로 전체 교체
+  if (bulkMode) {
+    return (
+      <BulkScheduleView
+        initialStoreId={primaryStoreId || stores[0]?.id || ""}
+        initialWeekStart={weekStart}
+        isGMView={isGMView}
+        isSaving={bulkSaving}
+        onSave={handleBulkSave}
+        onExit={() => setBulkMode(false)}
+      />
+    );
+  }
+
   return (
-    <div className="min-h-screen bg-[var(--color-bg)]">
+    <div className="min-h-screen bg-[var(--color-bg)] -m-4 md:-m-8">
       {/* Context Menu */}
       {contextMenu && (() => {
         const block = schedules.find((s) => s.id === contextMenu.blockId);
@@ -804,11 +936,14 @@ export default function SchedulesCalendarView() {
         const stored = block?.hourly_rate ?? 0;
         // Sync 메뉴 노출 조건: GM 권한 + cascade rate 존재 + stored와 다름
         const canSync = isGMView && blockEffective != null && stored !== blockEffective;
+        const todayStr = new Date().toISOString().slice(0, 10);
+        const blockIsPast = !!block && block.work_date < todayStr;
         return (
           <ContextMenu
-            x={contextMenu.x} y={contextMenu.y}
+            anchorEl={contextMenu.anchorEl}
             status={contextMenu.status}
             userRole={isGMView ? "gm" : "sv"}
+            isPast={blockIsPast}
             canSyncRate={canSync}
             syncRateLabel={canSync ? `$${blockEffective}/hr` : undefined}
             onClose={() => setContextMenu(null)}
@@ -835,23 +970,47 @@ export default function SchedulesCalendarView() {
         })()}
       />
 
-      {/* Swap Modal */}
+      {/* Switch Schedule Modal */}
       {(() => {
-        const fromSchedule = swapSourceId ? schedules.find((s) => s.id === swapSourceId) : null;
+        const fromSchedule = switchSourceId ? schedules.find((s) => s.id === switchSourceId) : null;
         const fromUser = fromSchedule ? users.find((u) => u.id === fromSchedule.user_id) : null;
+        // 현재 선택된 매장들의 스케줄만 후보로 제공
+        const storeFiltered = schedules.filter((s) => matchesStoreFilter(s.store_id));
         return (
           <SwapModal
-            open={swapOpen}
-            onClose={() => { setSwapOpen(false); setSwapSourceId(null); }}
+            open={switchOpen}
+            onClose={() => { setSwitchOpen(false); setSwitchSourceId(null); }}
             fromSchedule={fromSchedule ?? null}
             fromUser={fromUser ?? null}
-            candidateSchedules={schedules}
+            candidateSchedules={storeFiltered}
             users={users}
-            isSubmitting={swapMutation.isPending}
+            isSubmitting={switchMutation.isPending}
             onSwap={(otherId, reason) => {
-              if (!swapSourceId) return;
-              swapMutation.mutate({ id: swapSourceId, other_schedule_id: otherId, reason }, {
-                onSuccess: () => { setSwapOpen(false); setSwapSourceId(null); },
+              if (!switchSourceId) return;
+              switchMutation.mutate({ id: switchSourceId, other_schedule_id: otherId, reason }, {
+                onSuccess: () => { setSwitchOpen(false); setSwitchSourceId(null); },
+              });
+            }}
+          />
+        );
+      })()}
+
+      {/* Switch Staff Modal */}
+      {(() => {
+        const srcSchedule = changeStaffSourceId ? schedules.find((s) => s.id === changeStaffSourceId) : null;
+        const srcUser = srcSchedule ? users.find((u) => u.id === srcSchedule.user_id) ?? null : null;
+        return (
+          <ChangeStaffModal
+            open={changeStaffOpen}
+            onClose={() => { setChangeStaffOpen(false); setChangeStaffSourceId(null); }}
+            schedule={srcSchedule ?? null}
+            currentUser={srcUser}
+            users={users}
+            isSubmitting={updateMutation.isPending}
+            onChange={(newUserId) => {
+              if (!changeStaffSourceId) return;
+              updateMutation.mutate({ id: changeStaffSourceId, data: { user_id: newUserId } }, {
+                onSuccess: () => { setChangeStaffOpen(false); setChangeStaffSourceId(null); },
               });
             }}
           />
@@ -932,7 +1091,8 @@ export default function SchedulesCalendarView() {
       {/* Legend Modal */}
       <LegendModal open={legendOpen} onClose={() => setLegendOpen(false)} />
 
-      <div className="px-4 sm:px-6 xl:px-8 pb-8">
+
+      <div className="px-3 sm:px-4 lg:px-6 pb-4">
         {/* Row 1: Title + Stats */}
         <div className="flex items-center gap-3 md:gap-5 pt-4 pb-1 min-h-[40px]">
           <h1 className="text-[22px] font-semibold text-[var(--color-text)] shrink-0">Schedules</h1>
@@ -969,10 +1129,10 @@ export default function SchedulesCalendarView() {
           <div className="flex items-center gap-2 sm:gap-3">
             {/* View toggle */}
             <div className="flex bg-[var(--color-bg)] border border-[var(--color-border)] rounded-lg p-0.5 shrink-0">
-              {(["weekly", "daily"] as const).map((v) => (
-                <button key={v} type="button" onClick={() => setView(v)}
+              {(["monthly", "weekly", "daily"] as const).map((v) => (
+                <button key={v} type="button" onClick={() => { setView(v); if (v === "daily") setSelectedDay(new Date().toISOString().slice(0, 10)); }}
                   className={`px-2.5 sm:px-3.5 py-1.5 rounded-md text-[12px] sm:text-[13px] font-semibold transition-all ${view === v ? "bg-[var(--color-accent)] text-white" : "text-[var(--color-text-secondary)] hover:text-[var(--color-text)]"}`}>
-                  {v === "weekly" ? "Weekly" : "Daily"}
+                  {v === "monthly" ? "Monthly" : v === "weekly" ? "Weekly" : "Daily"}
                 </button>
               ))}
             </div>
@@ -981,7 +1141,12 @@ export default function SchedulesCalendarView() {
               <button
                 type="button"
                 onClick={() => {
-                  if (view === "weekly") {
+                  if (view === "monthly") {
+                    setMonthYear((p) => {
+                      const d = new Date(p.year, p.month - 1, 1);
+                      return { year: d.getFullYear(), month: d.getMonth() };
+                    });
+                  } else if (view === "weekly") {
                     const next = new Date(weekStart); next.setDate(next.getDate() - 7); setWeekStart(next);
                   } else {
                     const d = new Date(selectedDay + "T00:00:00"); d.setDate(d.getDate() - 1);
@@ -993,15 +1158,35 @@ export default function SchedulesCalendarView() {
               >
                 <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><polyline points="9 11 5 7 9 3" /></svg>
               </button>
-              <span className="text-[12px] sm:text-[13px] font-semibold text-[var(--color-text)] min-w-[100px] sm:min-w-[140px] text-center">
-                {view === "weekly"
-                  ? `${weekDates[0]?.dayName} ${weekDates[0]?.dayNum} – ${weekDates[6]?.dayName} ${weekDates[6]?.dayNum}`
+              <span className="text-[12px] sm:text-[13px] font-semibold text-[var(--color-text)] min-w-[100px] sm:min-w-[200px] text-center tabular-nums">
+                {view === "monthly"
+                  ? `${new Date(monthYear.year, monthYear.month).toLocaleDateString("en-US", { month: "long" }).toUpperCase()} ${monthYear.year}`
+                  : view === "weekly"
+                  ? (() => {
+                      const d0 = weekDates[0]?.date ? new Date(weekDates[0].date + "T00:00:00") : null;
+                      const d6 = weekDates[6]?.date ? new Date(weekDates[6].date + "T00:00:00") : null;
+                      if (!d0 || !d6) return "";
+                      const nextJan1 = new Date(d0.getFullYear() + 1, 0, 1);
+                      const yr = (d0 <= nextJan1 && nextJan1 <= d6) ? d0.getFullYear() + 1 : d0.getFullYear();
+                      const jan1 = new Date(yr, 0, 1);
+                      const w1Sun = new Date(jan1); w1Sun.setDate(w1Sun.getDate() - w1Sun.getDay());
+                      const wk = Math.round((d0.getTime() - w1Sun.getTime()) / (7 * 86400000)) + 1;
+                      const m0 = d0.toLocaleDateString("en-US", { month: "short" }).toUpperCase();
+                      const m6 = d6.toLocaleDateString("en-US", { month: "short" }).toUpperCase();
+                      const crossYear = d0.getFullYear() !== d6.getFullYear();
+                      return `[W${wk}${crossYear ? ` '${String(yr).slice(2)}` : ""}] ${m0} ${d0.getDate()} – ${m6} ${d6.getDate()}`;
+                    })()
                   : selectedDayLabel}
               </span>
               <button
                 type="button"
                 onClick={() => {
-                  if (view === "weekly") {
+                  if (view === "monthly") {
+                    setMonthYear((p) => {
+                      const d = new Date(p.year, p.month + 1, 1);
+                      return { year: d.getFullYear(), month: d.getMonth() };
+                    });
+                  } else if (view === "weekly") {
                     const next = new Date(weekStart); next.setDate(next.getDate() + 7); setWeekStart(next);
                   } else {
                     const d = new Date(selectedDay + "T00:00:00"); d.setDate(d.getDate() + 1);
@@ -1015,9 +1200,19 @@ export default function SchedulesCalendarView() {
               </button>
             </div>
             {/* Actions */}
-            <button type="button" onClick={() => openAddModal()} className="bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] text-white px-3 sm:px-4 py-2 rounded-lg text-[12px] sm:text-[13px] font-semibold flex items-center gap-1.5 transition-colors shrink-0 whitespace-nowrap">
-              <span className="hidden sm:inline">+</span> Add
-              <span className="hidden md:inline"> Schedule</span>
+            {!bulkMode && (
+              <button type="button" onClick={() => openAddModal()} className="bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] text-white px-3 sm:px-4 py-2 rounded-lg text-[12px] sm:text-[13px] font-semibold flex items-center gap-1.5 transition-colors shrink-0 whitespace-nowrap">
+                <span className="hidden sm:inline">+</span> Add
+                <span className="hidden md:inline"> Schedule</span>
+              </button>
+            )}
+            {/* Bulk mode — available from any view, auto-switches to weekly */}
+            <button
+              type="button"
+              onClick={() => { setView("weekly"); setBulkMode(true); }}
+              className="px-3 sm:px-4 py-2 rounded-lg text-[12px] sm:text-[13px] font-semibold transition-colors shrink-0 whitespace-nowrap border bg-[var(--color-surface)] border-[var(--color-border)] text-[var(--color-text-secondary)] hover:text-[var(--color-text)]"
+            >
+              Bulk
             </button>
             <button
               type="button"
@@ -1043,14 +1238,29 @@ export default function SchedulesCalendarView() {
           selectedStoreId={selectedStore}
         />
 
-        {/* Table Grid */}
-        <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl overflow-auto" style={{ maxHeight: "calc(100vh - 260px)" }}>
-          <div style={{ minWidth: view === "weekly" ? 900 : 1100 }}>
+        {/* Monthly Grid */}
+        {view === "monthly" && (
+          <MonthlyGrid
+            year={monthYear.year}
+            month={monthYear.month}
+            schedules={schedules.filter((s) => matchesStoreFilter(s.store_id))}
+            shifts={shiftsQ.data ?? []}
+            workRoles={monthlyWorkRolesQ.data ?? []}
+            isSingleStore={isSingleStore}
+            showCost={isGMView}
+            onDayClick={(date) => { setSelectedDay(date); setView("daily"); }}
+            onWeekClick={(date) => { setWeekStart(getWeekStart(new Date(date + "T00:00:00"))); setView("weekly"); }}
+          />
+        )}
+
+        {/* Table Grid (Weekly / Daily) */}
+        {view !== "monthly" && <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl overflow-auto flex-1" style={{ maxHeight: "calc(100vh - 220px)" }}>
+          <div style={{ minWidth: 220 + columns.length * (view === "weekly" ? 120 : 52) + 90 }}>
             <table className="w-full border-collapse" style={{ tableLayout: "fixed" }}>
               <colgroup>
-                <col style={{ width: 180 }} />
+                <col className="w-[180px] xl:w-[220px]" />
                 {columns.map((c) => <col key={c.key} />)}
-                <col style={{ width: 90 }} />
+                <col className="w-[80px] xl:w-[90px]" />
               </colgroup>
 
               <StatsHeader
@@ -1083,7 +1293,7 @@ export default function SchedulesCalendarView() {
                         <div className="min-w-0">
                           <div className="text-[13px] font-semibold text-[var(--color-text)] truncate">{u.full_name || u.username}</div>
                           <div className="text-[10px] text-[var(--color-text-muted)]">
-                            <span className={u.role_priority <= 20 ? "text-[var(--color-accent)] font-semibold" : u.role_priority <= 30 ? "text-[var(--color-warning)] font-semibold" : "font-semibold"}>{rolePriorityToBadge(u.role_priority)}</span>
+                            <span className={u.role_priority <= ROLE_PRIORITY.GM ? "text-[var(--color-accent)] font-semibold" : u.role_priority <= ROLE_PRIORITY.SV ? "text-[var(--color-warning)] font-semibold" : "font-semibold"}>{rolePriorityToBadge(u.role_priority)}</span>
                             {isGMView && userEffective != null ? <span title="Default rate for new schedules"> · ${userEffective}/hr{isUserCustom ? "" : " (inherited)"}</span> : null}
                             {isGMView && userEffective == null && <span className="text-[var(--color-danger)]"> · No default rate</span>}
                           </div>
@@ -1109,7 +1319,6 @@ export default function SchedulesCalendarView() {
                                       onClick={(e) => handleBlockClick(e, s)}
                                     />
                                   ))}
-                                  {/* 같은 날 추가 버튼 */}
                                   <button
                                     type="button"
                                     onClick={() => openAddModal(u.id, day.date)}
@@ -1120,20 +1329,20 @@ export default function SchedulesCalendarView() {
                                   </button>
                                 </div>
                               ) : (
-                                <div
-                                  className="h-full min-h-[44px] flex items-center justify-center opacity-0 hover:opacity-40 transition-opacity cursor-pointer"
-                                  role="button"
-                                  onClick={() => openAddModal(u.id, day.date)}
-                                  title={userEffective == null ? "Warning: this user has no hourly rate" : undefined}
-                                >
-                                  {userEffective == null ? (
-                                    <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-                                      <path d="M7 4v3m0 2.5h.01M2.5 11.5h9a1 1 0 00.87-1.5L8.37 3a1 1 0 00-1.74 0L2.63 10a1 1 0 00.87 1.5z" stroke="var(--color-warning)" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
-                                    </svg>
-                                  ) : (
-                                    <span className="text-[var(--color-text-muted)] text-[16px]">+</span>
-                                  )}
-                                </div>
+                                  <div
+                                    className="h-full min-h-[44px] flex items-center justify-center opacity-0 hover:opacity-40 transition-opacity cursor-pointer"
+                                    role="button"
+                                    onClick={() => openAddModal(u.id, day.date)}
+                                    title={userEffective == null ? "Warning: this user has no hourly rate" : undefined}
+                                  >
+                                    {userEffective == null ? (
+                                      <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                                        <path d="M7 4v3m0 2.5h.01M2.5 11.5h9a1 1 0 00.87-1.5L8.37 3a1 1 0 00-1.74 0L2.63 10a1 1 0 00.87 1.5z" stroke="var(--color-warning)" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+                                      </svg>
+                                    ) : (
+                                      <span className="text-[var(--color-text-muted)] text-[16px]">+</span>
+                                    )}
+                                  </div>
                               )}
                             </td>
                           );
@@ -1251,7 +1460,7 @@ export default function SchedulesCalendarView() {
               </tbody>
             </table>
           </div>
-        </div>
+        </div>}
       </div>
     </div>
   );

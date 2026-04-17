@@ -9,6 +9,7 @@ import { useWorkRoles } from "@/hooks/useWorkRoles";
 import { useUserStores } from "@/hooks/useUsers";
 import { useResolveSetting } from "@/hooks/useSettings";
 import type { Schedule, User, WorkRole, Store } from "@/types";
+import { ROLE_PRIORITY } from "@/lib/permissions";
 
 export interface ScheduleEditPayload {
   userId: string;
@@ -66,8 +67,8 @@ function getInitials(name: string | null | undefined): string {
 }
 
 function rolePriorityToColor(p: number): string {
-  if (p <= 20) return "bg-[var(--color-accent-muted)] text-[var(--color-accent)]";
-  if (p <= 30) return "bg-[var(--color-warning-muted)] text-[var(--color-warning)]";
+  if (p <= ROLE_PRIORITY.GM) return "bg-[var(--color-accent-muted)] text-[var(--color-accent)]";
+  if (p <= ROLE_PRIORITY.SV) return "bg-[var(--color-warning-muted)] text-[var(--color-warning)]";
   return "bg-[var(--color-success-muted)] text-[var(--color-success)]";
 }
 
@@ -333,6 +334,17 @@ export function ScheduleEditModal({ open, mode, schedule, prefilledUserId, prefi
 
         {/* Form */}
         <div className="px-5 py-4 space-y-3.5">
+          {/* Date */}
+          <div>
+            <label className="block text-[11px] font-semibold uppercase tracking-wider text-[var(--color-text-muted)] mb-1.5">Date</label>
+            <input
+              type="date"
+              value={date}
+              onChange={(e) => setDate(e.target.value)}
+              className="w-full px-3 py-2 border border-[var(--color-border)] rounded-lg text-[13px] bg-[var(--color-surface)]"
+            />
+          </div>
+
           {/* Staff */}
           <div>
             <label className="block text-[11px] font-semibold uppercase tracking-wider text-[var(--color-text-muted)] mb-1.5">Staff</label>
@@ -344,7 +356,7 @@ export function ScheduleEditModal({ open, mode, schedule, prefilledUserId, prefi
               )}
               <select
                 value={userId}
-                onChange={(e) => { setUserId(e.target.value); setModalStoreId(""); setWorkRoleId(""); }}
+                onChange={(e) => { setUserId(e.target.value); }}
                 className="flex-1 px-3 py-2 border border-[var(--color-border)] rounded-lg text-[13px] bg-[var(--color-surface)]"
               >
                 {users.map((u) => (
@@ -370,15 +382,25 @@ export function ScheduleEditModal({ open, mode, schedule, prefilledUserId, prefi
             </div>
           )}
 
-          {/* Date */}
+          {/* Work Role */}
           <div>
-            <label className="block text-[11px] font-semibold uppercase tracking-wider text-[var(--color-text-muted)] mb-1.5">Date</label>
-            <input
-              type="date"
-              value={date}
-              onChange={(e) => setDate(e.target.value)}
+            <label className="block text-[11px] font-semibold uppercase tracking-wider text-[var(--color-text-muted)] mb-1.5">Work Role</label>
+            <select
+              value={workRoleId}
+              onChange={(e) => onChangeWorkRole(e.target.value)}
               className="w-full px-3 py-2 border border-[var(--color-border)] rounded-lg text-[13px] bg-[var(--color-surface)]"
-            />
+            >
+              <option value="">— None (no role) —</option>
+              {workRolesQ.isLoading && <option disabled>Loading…</option>}
+              {workRoles.map((wr) => (
+                <option key={wr.id} value={wr.id}>{workRoleLabel(wr)}</option>
+              ))}
+            </select>
+            {workRoles.length === 0 && !workRolesQ.isLoading && (
+              <p className="text-[11px] text-[var(--color-text-muted)] mt-1">
+                No work roles defined for this store yet. Add some in Schedule Settings.
+              </p>
+            )}
           </div>
 
           {/* Time — single or split (2 segments) */}
@@ -481,27 +503,6 @@ export function ScheduleEditModal({ open, mode, schedule, prefilledUserId, prefi
               {validationError}
             </div>
           )}
-
-          {/* Work Role */}
-          <div>
-            <label className="block text-[11px] font-semibold uppercase tracking-wider text-[var(--color-text-muted)] mb-1.5">Work Role</label>
-            <select
-              value={workRoleId}
-              onChange={(e) => onChangeWorkRole(e.target.value)}
-              className="w-full px-3 py-2 border border-[var(--color-border)] rounded-lg text-[13px] bg-[var(--color-surface)]"
-            >
-              <option value="">— None (no role) —</option>
-              {workRolesQ.isLoading && <option disabled>Loading…</option>}
-              {workRoles.map((wr) => (
-                <option key={wr.id} value={wr.id}>{workRoleLabel(wr)}</option>
-              ))}
-            </select>
-            {workRoles.length === 0 && !workRolesQ.isLoading && (
-              <p className="text-[11px] text-[var(--color-text-muted)] mt-1">
-                No work roles defined for this store yet. Add some in Schedule Settings.
-              </p>
-            )}
-          </div>
 
           {/* Hourly Rate (override) — GM/Owner only */}
           {showCost && (

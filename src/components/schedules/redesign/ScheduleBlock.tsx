@@ -112,7 +112,8 @@ function elapsedSince(iso: string): string {
 export function ScheduleBlock({ schedule, showCost, attendance, currentStoreId, onClick }: Props) {
   const startH = parseTimeToHours(schedule.start_time);
   const endH = parseTimeToHours(schedule.end_time);
-  const grossHours = Math.max(0, endH - startH);
+  // overnight: end < start → wrap (e.g. 22:00–02:00 = 4h)
+  const grossHours = endH > startH ? endH - startH : (24 - startH + endH);
   const hasBreak = !!(schedule.break_start_time && schedule.break_end_time);
   const breakHours = hasBreak
     ? Math.max(0, parseTimeToHours(schedule.break_end_time) - parseTimeToHours(schedule.break_start_time))
@@ -182,7 +183,7 @@ export function ScheduleBlock({ schedule, showCost, attendance, currentStoreId, 
         ${isRejected || isCancelled ? "" : styles.border}
         ${isConfirmed ? styles.bg : ""}
         ${isRequested ? "border-dashed" : ""}
-        ${isDraft ? "border-dashed border-[var(--color-border)] bg-[var(--color-bg)] opacity-50" : ""}
+        ${isDraft ? "border-dashed border-[var(--color-accent)] bg-[var(--color-accent-muted)] opacity-75" : ""}
         ${rejectedClasses}
         ${cancelledClasses}
       `}
