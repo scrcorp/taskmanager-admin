@@ -9,9 +9,15 @@ import {
 } from "@/components/hiring/HiringTabs";
 import { LinkAndQrPanel } from "@/components/hiring/LinkAndQrPanel";
 import { CoverPhotosPanel } from "@/components/hiring/CoverPhotosPanel";
-import { Phase2Placeholder } from "@/components/hiring/Phase2Placeholder";
+import { QuestionsPanel } from "@/components/hiring/QuestionsPanel";
+import { ApplicantsPanel } from "@/components/hiring/ApplicantsPanel";
+import { PipelinePanel } from "@/components/hiring/PipelinePanel";
 import { ExternalLink } from "lucide-react";
 import { encodeUuid } from "@/lib/url-encoding";
+import {
+  MOCK_APPLICANTS,
+  MOCK_QUESTIONS,
+} from "@/components/hiring/_phase2Mock";
 
 export default function HiringPage() {
   const { data: stores = [], isLoading } = useStores();
@@ -45,27 +51,18 @@ export default function HiringPage() {
       case "photos":
         return <CoverPhotosPanel storeId={selected.id} />;
       case "questions":
-        return (
-          <Phase2Placeholder
-            title="Custom screening questions"
-            body="Configure per-store screening questions that applicants answer before their application is submitted. Adds an extra step to the public signup flow when enabled."
-          />
-        );
+        return <QuestionsPanel />;
       case "applicants":
-        return (
-          <Phase2Placeholder
-            title="Applicant inbox"
-            body="Review applications, schedule interviews, and move candidates through your hiring pipeline."
-          />
-        );
+        return <ApplicantsPanel />;
       case "pipeline":
-        return (
-          <Phase2Placeholder
-            title="Hiring pipeline"
-            body="Drag applicants between stages to track progress. Auto-promotes to Staff when moved to Hired."
-          />
-        );
+        return <PipelinePanel />;
     }
+  };
+
+  // Phase 2 mock 카운트 — sub-tab 배지에 표시
+  const tabCounts = {
+    questions: MOCK_QUESTIONS.length,
+    applicants: MOCK_APPLICANTS.length,
   };
 
   return (
@@ -102,7 +99,7 @@ export default function HiringPage() {
               </a>
             </div>
 
-            <HiringTabs active={tab} onSelect={setTab} />
+            <HiringTabs active={tab} onSelect={setTab} counts={tabCounts} />
 
             <div className="flex-1 overflow-y-auto bg-[#F5F6FA] p-6">
               {renderPanel()}
