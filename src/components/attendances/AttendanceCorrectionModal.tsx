@@ -2,52 +2,21 @@
 
 import React, { useMemo, useState } from "react";
 import { ArrowRight } from "lucide-react";
-import {
-  Button,
-  Input,
-  Select,
-  Textarea,
-} from "@/components/ui";
+import { Button, Input, Textarea } from "@/components/ui";
 import { useCorrectAttendance } from "@/hooks";
 import type { Attendance } from "@/types";
 import { formatDateTime } from "@/lib/utils";
 import { ReasonPicker } from "./ReasonPicker";
 
 /**
- * Attendance correction modal — Status / Clock In / Clock Out / Note 를 한 번에 보정.
+ * Attendance time/note correction modal — Clock In / Clock Out / Note 시간 정정 전용.
  *
- * 인라인 편집을 대체하는 audit-aware 보정 모달.
- * - 각 필드는 입력 즉시 Before → After 가 보임 (변경 없으면 After 숨김)
- * - Reason 필수 (preset + Other). 없으면 Save 비활성
- * - 변경된 필드들을 순차 PATCH /correct 로 전송 (서버가 매 요청마다 total time 재계산)
+ * Status 변경은 AttendanceActionBar 의 액션 버튼에서 처리한다 (state machine).
+ * 여기서는 이미 기록된 시각이나 노트의 오타/오기록 정정 같이 status 가 안 바뀌는
+ * 단순 보정만 다룬다. Reason 필수 + Before → After diff.
  *
  * useModal().open() 으로 띄울 것 — close(true) 면 성공, close() 면 취소.
  */
-
-type StatusKey =
-  | "upcoming"
-  | "soon"
-  | "working"
-  | "on_break"
-  | "late"
-  | "clocked_out"
-  | "no_show"
-  | "cancelled";
-
-const STATUS_OPTIONS: Array<{ value: StatusKey; label: string }> = [
-  { value: "upcoming", label: "Upcoming" },
-  { value: "soon", label: "Soon" },
-  { value: "late", label: "Late" },
-  { value: "working", label: "Working" },
-  { value: "on_break", label: "On Break" },
-  { value: "clocked_out", label: "Clocked Out" },
-  { value: "no_show", label: "No Show" },
-  { value: "cancelled", label: "Cancelled" },
-];
-
-const STATUS_LABELS: Record<string, string> = Object.fromEntries(
-  STATUS_OPTIONS.map((o) => [o.value, o.label]),
-);
 
 function isoToLocalInput(iso: string | null): string {
   if (!iso) return "";
@@ -69,7 +38,6 @@ function localInputToIso(s: string): string | null {
 interface Draft {
   clock_in: string;
   clock_out: string;
-  status: StatusKey;
   note: string;
 }
 
@@ -89,7 +57,6 @@ export function AttendanceCorrectionModal({
     () => ({
       clock_in: isoToLocalInput(attendance.clock_in),
       clock_out: isoToLocalInput(attendance.clock_out),
-      status: attendance.status as StatusKey,
       note: attendance.note ?? "",
     }),
     [attendance],
@@ -99,19 +66,10 @@ export function AttendanceCorrectionModal({
   const [reason, setReason] = useState<string>("");
   const correctAttendance = useCorrectAttendance();
 
-  /** 변경된 필드 목록 — Before → After diff 표시 + 저장 활성 조건 */
   const changedFields = useMemo<
     Array<{ key: keyof Draft; label: string; before: string; after: string }>
   >(() => {
     const out: Array<{ key: keyof Draft; label: string; before: string; after: string }> = [];
-    if (draft.status !== original.status) {
-      out.push({
-        key: "status",
-        label: "Status",
-        before: STATUS_LABELS[original.status] ?? original.status,
-        after: STATUS_LABELS[draft.status] ?? draft.status,
-      });
-    }
     if (draft.clock_in !== original.clock_in) {
       out.push({
         key: "clock_in",
@@ -150,7 +108,6 @@ export function AttendanceCorrectionModal({
     if (!canSave) return;
     const trimmedReason = reason.trim();
     try {
-      // 순차 호출 — 시간 재계산 누적 (서버가 매 요청마다 total_work_minutes 재계산)
       for (const f of changedFields) {
         const value: string =
           f.key === "clock_in" || f.key === "clock_out"
@@ -168,34 +125,26 @@ export function AttendanceCorrectionModal({
       }
       onClose(true);
     } catch {
-      // hook 자동 모달 — 모달은 열어둠 (사용자가 reason 만 보강하면 재시도 가능)
+      // hook 자동 모달
     }
   };
 
   return (
     <div className="flex flex-col gap-5">
-      {/* 메타 — 어떤 attendance 를 고치는지 컨텍스트 */}
       <div className="text-xs text-text-muted">
         {attendance.user_name} · {attendance.store_name} · {attendance.work_date}
+        <span className="ml-2 text-text-muted">
+          (Status changes use the action buttons on the page.)
+        </span>
       </div>
 
-      {/* Reason — 최상단, 필수 */}
       <ReasonPicker
         value={reason}
         onChange={setReason}
         hint="Required. Choose a preset or pick Other to describe."
       />
 
-      {/* 편집 필드 — 좌: input, 우: Before → After 미리보기 */}
       <div className="grid grid-cols-2 gap-3">
-        <Select
-          label="Status"
-          value={draft.status}
-          onChange={(e) => setDraft({ ...draft, status: e.target.value as StatusKey })}
-          options={STATUS_OPTIONS}
-        />
-        <div /> {/* spacer to keep status alone on the row */}
-
         <Input
           label="Clock In"
           type="datetime-local"
@@ -218,7 +167,6 @@ export function AttendanceCorrectionModal({
         placeholder="Manager memo (optional)"
       />
 
-      {/* Diff 프리뷰 — 변경된 필드만 노출 */}
       {changedFields.length > 0 && (
         <div className="rounded-lg border border-border bg-surface-hover p-3">
           <div className="text-xs text-text-muted mb-2">
@@ -237,7 +185,6 @@ export function AttendanceCorrectionModal({
         </div>
       )}
 
-      {/* 액션 */}
       <div className="flex justify-end gap-2 pt-2 border-t border-border">
         <Button variant="secondary" onClick={() => onClose()}>
           Cancel

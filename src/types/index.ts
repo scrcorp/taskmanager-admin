@@ -643,6 +643,24 @@ export interface AttendanceCorrectionUpdateRequest {
   reason: string;
 }
 
+/** 시간 기반 액션 요청 (clock_in / clock_out / end_break). */
+export interface AttendanceClockActionRequest {
+  at: string; // ISO datetime
+  reason: string;
+}
+
+/** Break 시작 요청 — break_type 필수. */
+export interface AttendanceBreakStartRequest {
+  at: string;
+  break_type: "paid_10min" | "unpaid_meal";
+  reason: string;
+}
+
+/** reason 만 받는 액션 (mark_no_show / cancel / reopen). */
+export interface AttendanceReasonOnlyRequest {
+  reason: string;
+}
+
 /** Break session 추가 요청 타입. 모든 새 쓰기는 paid_10min/unpaid_meal 사용. */
 export interface BreakSessionCreateRequest {
   started_at: string; // ISO

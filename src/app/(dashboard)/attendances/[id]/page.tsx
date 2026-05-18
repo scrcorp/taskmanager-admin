@@ -51,6 +51,7 @@ import {
 import { useModal } from "@/components/ui/imperative-modal";
 import { formatDateTime, formatFixedDate, timeAgo } from "@/lib/utils";
 import { AttendanceCorrectionModal } from "@/components/attendances/AttendanceCorrectionModal";
+import { AttendanceActionBar } from "@/components/attendances/AttendanceActionBar";
 import { ReasonPicker } from "@/components/attendances/ReasonPicker";
 
 type StatusKey =
@@ -152,7 +153,7 @@ export default function AttendanceDetailPage(): React.ReactElement {
   return (
     <div>
       {/* 헤더 */}
-      <div className="flex items-center gap-3 mb-6">
+      <div className="flex items-center gap-3 mb-3">
         <button
           onClick={goBack}
           className="p-1.5 rounded-lg hover:bg-surface-hover text-text-secondary transition-colors"
@@ -163,9 +164,14 @@ export default function AttendanceDetailPage(): React.ReactElement {
         <h1 className="text-xl md:text-2xl font-extrabold flex-1 min-w-0 truncate">
           Attendance Detail
         </h1>
-        <Button variant="primary" size="sm" onClick={openCorrectionModal}>
-          <Edit2 size={14} className="mr-1" /> Make Correction
+        <Button variant="ghost" size="sm" onClick={openCorrectionModal}>
+          <Edit2 size={14} className="mr-1" /> Edit times / note
         </Button>
+      </div>
+
+      {/* 상태 기반 액션 바 — Status 변경은 모두 여기를 거친다 (state machine). */}
+      <div className="mb-6">
+        <AttendanceActionBar attendance={attendance} />
       </div>
 
       {/* 상세 카드 — 전부 읽기 전용. 시간/상태/노트 수정은 모달 사용. */}
