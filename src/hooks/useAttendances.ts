@@ -14,6 +14,7 @@ import type {
   AttendanceBreakItem,
   AttendanceCorrection,
   AttendanceCorrectionRequest,
+  AttendanceCorrectionUpdateRequest,
   AttendanceFilters,
   BreakSessionCreateRequest,
   BreakSessionUpdateRequest,
@@ -115,6 +116,40 @@ export const useCorrectAttendance = (): UseMutationResult<
       success("Attendance corrected.");
     },
     onError: error("Couldn't correct attendance"),
+  });
+};
+
+/**
+ * 기존 correction 의 reason 만 수정. History 카드 인라인 편집에서 사용.
+ * Update the reason of an existing correction record (history inline edit).
+ */
+export const useUpdateCorrectionReason = (): UseMutationResult<
+  AttendanceCorrection,
+  Error,
+  { attendanceId: string; correctionId: string; data: AttendanceCorrectionUpdateRequest }
+> => {
+  const queryClient: QueryClient = useQueryClient();
+  const { success, error } = useMutationResult();
+  return useMutation<
+    AttendanceCorrection,
+    Error,
+    { attendanceId: string; correctionId: string; data: AttendanceCorrectionUpdateRequest }
+  >({
+    mutationFn: async ({ attendanceId, correctionId, data }) => {
+      const res: AxiosResponse<AttendanceCorrection> = await api.patch(
+        `/console/attendances/${attendanceId}/corrections/${correctionId}`,
+        data,
+      );
+      return res.data;
+    },
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["attendances"] });
+      queryClient.invalidateQueries({
+        queryKey: ["attendances", variables.attendanceId],
+      });
+      success("Reason updated.");
+    },
+    onError: error("Couldn't update reason"),
   });
 };
 

@@ -102,6 +102,7 @@ export {
   useAttendances,
   useAttendance,
   useCorrectAttendance,
+  useUpdateCorrectionReason,
   useAddBreakSession,
   useUpdateBreakSession,
   useDeleteBreakSession,

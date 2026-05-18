@@ -631,11 +631,16 @@ export interface AttendanceFilters {
  *  Attendance correction request payload.
  *  field_name: clock_in | clock_out | break_start | break_end | status
  *  corrected_value: ISO datetime (시간 필드) 또는 status 문자열
- *  reason: optional */
+ *  reason: 필수 (preset label 또는 Other free-text). DB NOT NULL 과 일치. */
 export interface AttendanceCorrectionRequest {
   field_name: string;
   corrected_value: string;
-  reason?: string | null;
+  reason: string;
+}
+
+/** 기존 correction 의 reason 만 갱신 (History 인라인 편집). */
+export interface AttendanceCorrectionUpdateRequest {
+  reason: string;
 }
 
 /** Break session 추가 요청 타입. 모든 새 쓰기는 paid_10min/unpaid_meal 사용. */
