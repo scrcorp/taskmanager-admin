@@ -399,9 +399,10 @@ export default function SchedulesCalendarView() {
 
   // ─── Bulk mode ─────────────────────────────────────
   const [bulkMode, setBulkMode] = useState(false);
-  const bulkCreateMutation = useBulkCreateSchedules();
-  const bulkUpdateMutation = useBulkUpdateSchedules();
-  const bulkDeleteMutation = useBulkDeleteSchedules();
+  // create/update/delete 가 chain 될 수 있어 각자 모달 띄우면 최대 3번 — silent 로 묶고 호출 측에서 통합 결과 1번 발사
+  const bulkCreateMutation = useBulkCreateSchedules({ silent: true });
+  const bulkUpdateMutation = useBulkUpdateSchedules({ silent: true });
+  const bulkDeleteMutation = useBulkDeleteSchedules({ silent: true });
   const bulkSaving = bulkCreateMutation.isPending || bulkUpdateMutation.isPending || bulkDeleteMutation.isPending;
 
   async function handleBulkSave(payload: SavePayload) {
@@ -449,8 +450,16 @@ export default function SchedulesCalendarView() {
         await bulkDeleteMutation.mutateAsync({ ids: payload.deletes });
         deleted = payload.deletes.length;
       }
-      // bulk hook 들이 각자 자동으로 결과 모달 띄움 — 페이지에서 또 띄우지 않음 (중복 방지)
       setBulkMode(false);
+      const parts: string[] = [];
+      if (created > 0) parts.push(`${created} created`);
+      if (updated > 0) parts.push(`${updated} updated`);
+      if (deleted > 0) parts.push(`${deleted} deleted`);
+      void modal.alert({
+        type: "success",
+        title: "Schedules saved",
+        message: parts.length > 0 ? parts.join(", ") + "." : "No changes.",
+      });
     } catch (err) {
       // 부분 실패 가능 — 어디서 멈췄는지 + 에러 메시지를 모달로 명확히 표시
       void modal.alert({
