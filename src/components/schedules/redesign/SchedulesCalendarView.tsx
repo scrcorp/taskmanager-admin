@@ -1758,9 +1758,9 @@ export default function SchedulesCalendarView() {
                             const startH = parseTimeToHours(s.start_time);
                             const endH = parseTimeToHours(s.end_time);
                             const sStart = Math.max(0, startH * 60 - openHour * 60);
-                            // Overnight(end<=start): 시작일 셀에서는 [start → close)까지만 표시
-                            const rawEndMin = endH > startH ? endH * 60 - openHour * 60 : totalMin;
-                            const sEnd = Math.min(totalMin, rawEndMin);
+                            // Overnight(end<=start): 종료를 다음날 00:00 기준 절대시간(24+endH)으로 환산
+                            const endAbsH = endH > startH ? endH : 24 + endH;
+                            const sEnd = Math.min(totalMin, endAbsH * 60 - openHour * 60);
                             if (sEnd <= sStart) continue;
                             if (sStart > cursor) segments.push({ type: "gap", startMin: cursor, endMin: sStart });
                             segments.push({ type: "sched", sched: s, startMin: sStart, endMin: sEnd });
