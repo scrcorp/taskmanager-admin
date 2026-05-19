@@ -22,8 +22,10 @@ import type { Alert } from "@/types";
 
 /** reference_type → admin 경로 매핑.
  *
- * 서버가 보내는 reference_type 값:
- * - additional_task          → /tasks/{id}
+ * 서버가 보내는 reference_type 값 (모두 → /tasks/{id} 로 라우팅):
+ * - task                     → /tasks/{id} (현재)
+ * - issue                    → /tasks/{id} (legacy: issues 시절 알림)
+ * - additional_task          → /tasks/{id} (legacy: additional_tasks 시절 알림)
  * - notice             → /notices/{id}
  * - schedule                 → /schedules/{id}
  * - attendance               → /attendances/{id}
@@ -31,10 +33,13 @@ import type { Alert } from "@/types";
  * - cl_instance_items        → /checklists/instances/{id} (item 단위 라우트 없음, 인스턴스로)
  * - checklist_review         → /checklists/instances/{id} (reply 알림: instance id 들어옴)
  * - daily_report             → /daily-reports/{id}
+ * - issue_report             → /reports/issues/{id}
  */
 function getAlertHref(referenceType: string | null, referenceId: string | null): string | null {
   if (!referenceType || !referenceId) return null;
   switch (referenceType) {
+    case "task":
+    case "issue":
     case "additional_task":
       return `/tasks/${referenceId}`;
     case "notice":
@@ -49,6 +54,8 @@ function getAlertHref(referenceType: string | null, referenceId: string | null):
       return `/checklists/instances/${referenceId}`;
     case "daily_report":
       return `/daily-reports/${referenceId}`;
+    case "issue_report":
+      return `/reports/issues/${referenceId}`;
     default:
       return null;
   }

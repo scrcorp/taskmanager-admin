@@ -63,6 +63,12 @@ export interface Store {
 export interface UserStoreAssignment extends Store {
   is_manager: boolean;
   is_work_assignment: boolean;
+  /** 매장별 주 work_role (issue report LinkPicker 등에서 활용) */
+  primary_work_role_id?: string | null;
+  primary_work_role_name?: string | null;
+  /** 매장별 주 position */
+  primary_position_id?: string | null;
+  primary_position_name?: string | null;
 }
 
 export interface StoreDetail extends Store {
@@ -157,6 +163,11 @@ export interface User {
   effective_hourly_rate?: number | null;
   is_active: boolean;
   created_at: string;
+  /** /console/users?store_id=X 호출 시에만 채워지는 매장별 정보 */
+  primary_work_role_id_in_store?: string | null;
+  primary_work_role_name_in_store?: string | null;
+  primary_position_id_in_store?: string | null;
+  primary_position_name_in_store?: string | null;
 }
 
 // Checklist
@@ -1548,3 +1559,225 @@ export interface ClockinPin {
   clockin_pin: string;
 }
 
+
+// ── Unified Report (multi-type: daily, issue, ...) ──────────────
+
+/** Multi-type report. type 디스크리미네이터 + payload jsonb. */
+export interface Report {
+  id: string;
+  type: string;
+  organization_id: string;
+  store_id: string | null;
+  store_name: string | null;
+  template_id: string | null;
+  author_id: string | null;
+  author_name: string | null;
+  title: string | null;
+  status: string;
+  report_date: string | null;
+  submitted_at: string | null;
+  created_at: string;
+  updated_at: string;
+  payload: Record<string, unknown>;
+  comment_count: number;
+  comments: ReportComment[];
+}
+
+export interface ReportComment {
+  id: string;
+  user_id: string | null;
+  user_name?: string | null;
+  content: string;
+  created_at: string;
+}
+
+export interface ReportFilters {
+  type?: string;
+  store_id?: string;
+  date_from?: string;
+  date_to?: string;
+  status?: string;
+  show_all?: boolean;
+  page?: number;
+  per_page?: number;
+}
+
+// Issue payload shape (typed view of payload jsonb)
+export const ISSUE_CATEGORIES = [
+  "equipment",
+  "safety",
+  "customer",
+  "staff",
+  "inventory",
+  "other",
+] as const;
+export type IssueCategory = (typeof ISSUE_CATEGORIES)[number];
+
+export const ISSUE_SEVERITIES = ["low", "medium", "high", "critical"] as const;
+export type IssueSeverity = (typeof ISSUE_SEVERITIES)[number];
+
+export const ISSUE_STATUSES = ["open", "in_progress", "closed"] as const;
+export type IssueStatus = (typeof ISSUE_STATUSES)[number];
+
+export interface IssueAttachment {
+  key: string;
+  url?: string;
+  mime_type?: string | null;
+  kind?: "image" | "video" | null;
+  name?: string | null;
+  size?: number | null;
+}
+
+export interface IssueReportPayload {
+  category: string; // store template의 카테고리 code (동적)
+  severity: IssueSeverity;
+  description?: string | null;
+  attachments?: IssueAttachment[];
+  links?: {
+    schedule_ids?: string[];
+    checklist_instance_ids?: string[];
+    position_ids?: string[];
+    work_role_ids?: string[];
+    related_user_ids?: string[];
+    related_roles?: string[];
+  };
+  extra_viewers?: {
+    user_ids?: string[];
+    position_ids?: string[];
+  };
+  custom_field_values?: Record<string, unknown>;
+  // promote 시 채워짐. 신규 키는 linked_task_id, 구버전 데이터는 linked_issue_id 도 인식.
+  linked_task_id?: string | null;
+  linked_issue_id?: string | null;
+}
+
+// 신고 리포트(issue_report) 생성 요청
+export interface IssueReportCreateRequest {
+  type: "issue";
+  store_id: string;
+  title: string;
+  report_date?: string;
+  payload: IssueReportPayload;
+}
+
+// ── Task (work item: additional_tasks → issues → tasks) ──
+// 명칭 변경 이력: additional_tasks → issues → tasks. issue report 와 단어가 겹쳐
+// 혼동되어 tasks 로 정착.
+
+export interface TaskAssignee {
+  user_id: string | null;
+  user_name: string | null;
+}
+
+export interface TaskLinks {
+  schedule_ids?: string[];
+  checklist_instance_ids?: string[];
+  position_ids?: string[];
+  work_role_ids?: string[];
+  related_user_ids?: string[];
+  related_roles?: string[];
+}
+
+export interface TaskAttachment {
+  key: string;
+  url?: string;
+  mime_type?: string | null;
+  kind?: "image" | "video" | "file" | null;
+  name?: string | null;
+  size?: number | null;
+}
+
+export type TaskStatus = "pending" | "in_progress" | "under_review" | "completed";
+
+export interface Task {
+  id: string;
+  organization_id: string;
+  // store scope — store_ids 가 정 (단일/다중/org-wide). store_id 는 legacy mirror.
+  store_ids: string[];
+  store_names: string[];
+  store_id: string | null;
+  store_name: string | null;
+  title: string;
+  description: string | null;
+  priority: "normal" | "urgent";
+  severity: IssueSeverity | null;
+  category: string | null;
+  status: TaskStatus;
+  due_date: string | null;
+  created_by: string | null;
+  created_by_name: string | null;
+  source_report_id: string | null;
+  links?: TaskLinks;
+  attachments?: TaskAttachment[];
+  submitted_at?: string | null;
+  submitted_by?: string | null;
+  submitted_by_name?: string | null;
+  reviewed_at?: string | null;
+  reviewed_by?: string | null;
+  reviewed_by_name?: string | null;
+  created_at: string;
+  updated_at: string;
+  assignees: TaskAssignee[];
+}
+
+export interface TaskComment {
+  id: string;
+  task_id: string;
+  user_id: string | null;
+  user_name: string | null;
+  content: string;
+  kind: "comment" | "system";
+  attachments?: TaskAttachment[];
+  created_at: string;
+}
+
+export interface TaskCreateRequest {
+  // store_ids 가 정. 빈 array = org-wide. store_id (legacy) 도 받지만 권장은 store_ids.
+  store_ids?: string[];
+  store_id?: string | null;
+  title: string;
+  description?: string | null;
+  priority?: "normal" | "urgent";
+  severity?: IssueSeverity | null;
+  category?: string | null;
+  due_date?: string | null;
+  assignee_ids?: string[];
+  source_report_id?: string | null;
+  links?: TaskLinks;
+  attachments?: TaskAttachment[];
+}
+
+export interface TaskUpdateRequest {
+  store_ids?: string[];
+  title?: string;
+  description?: string | null;
+  priority?: "normal" | "urgent";
+  severity?: IssueSeverity | null;
+  category?: string | null;
+  status?: TaskStatus;
+  due_date?: string | null;
+  assignee_ids?: string[];
+  links?: TaskLinks;
+  attachments?: TaskAttachment[];
+}
+
+export interface TaskTransitionRequest {
+  status: TaskStatus;
+  comment?: string;
+  attachments?: TaskAttachment[];
+}
+
+export interface TaskCommentCreateRequest {
+  content: string;
+  attachments?: TaskAttachment[];
+}
+
+export interface TaskPromoteRequest {
+  title?: string;
+  description?: string | null;
+  priority?: "normal" | "urgent";
+  severity?: IssueSeverity | null;
+  category?: string | null;
+  due_date?: string | null;
+  assignee_ids?: string[];
+}
